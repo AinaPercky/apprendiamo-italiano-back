@@ -1,0 +1,59 @@
+# ---------------------------
+# Python
+# ---------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+venv/
+.env
+.env.*
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# ---------------------------
+# VS Code
+# ---------------------------
+.vscode/
+
+# ---------------------------
+# MySQL / SQLite / DB
+# ---------------------------
+*.db
+*.sqlite3
+
+# ---------------------------
+# Logs
+# ---------------------------
+*.log
+
+# ---------------------------
+# pytest / test
+# ---------------------------
+.pytest_cache/
+.coverage
+htmlcov/
+.nosetests.xml
+*.cover
+*.py,cover
+*.tox/
+
+# ---------------------------
+# Misc
+# ---------------------------
+.DS_Store
+Thumbs.db
+
+# ---------------------------
+# Specific project files
+# ---------------------------
+.history/

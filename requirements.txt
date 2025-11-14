@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy[asyncio]
+asyncpg
+pydantic
+gTTS
+pypinyin
+python-multipart
+databases
+python-dotenv # Utile pour la configuration DB
+httpx
