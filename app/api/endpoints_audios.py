@@ -30,11 +30,13 @@ async def create_audio(
 
 @router.get("/", response_model=List[schemas.AudioItem])
 async def list_audios(
-    skip: int = 0, 
-    limit: int = 10, 
+    # skip: int = 0, 
+    # limit: int = 10, 
     db: AsyncSession = Depends(get_db)
 ):
-    return await crud_audios.list_audio_items(db, skip, limit)
+    return await crud_audios.list_audio_items(db)
+
+    # return await crud_audios.list_audio_items(db, skip, limit)
 
 @router.get("/{audio_id}", response_model=schemas.AudioItem)
 async def get_audio(audio_id: int, db: AsyncSession = Depends(get_db)):
