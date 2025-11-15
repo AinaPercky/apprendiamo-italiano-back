@@ -1,8 +1,7 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from datetime import datetime
 from typing import List, Optional
-
-# --- Schémas pour les Cartes (Flashcards) ---
+import json
 
 class DeckBase(BaseModel):
     name: str
@@ -15,7 +14,8 @@ class Deck(DeckBase):
     id_json: str
     total_correct: int = 0
     total_attempts: int = 0
-    # cards: Optional[List["Card"]] = [] # Retiré pour éviter la dépendance circulaire immédiate
+
+    cards: List["Card"] = []   # ← GUILLEMETS OBLIGATOIRES
 
     model_config = {"from_attributes": True}
 
@@ -26,6 +26,16 @@ class CardBase(BaseModel):
     image: Optional[str] = None
     box: int = 0
     tags: List[str] = []
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def parse_tags_if_string(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return []
+        return v or []
 
 class CardCreate(CardBase):
     deck_pk: int
@@ -41,8 +51,6 @@ class Card(CardBase):
     next_review: datetime
 
     model_config = {"from_attributes": True}
-
-# --- Schémas pour l'Audio (TTS) ---
 
 class AudioItemBase(BaseModel):
     title: str
@@ -61,5 +69,4 @@ class AudioItem(AudioItemBase):
 
     model_config = {"from_attributes": True}
 
-# Mise à jour de la référence pour éviter l'erreur de nom non défini
 Deck.model_rebuild()
