@@ -99,17 +99,24 @@ async def get_card(db: AsyncSession, card_pk: int) -> Optional[models.Card]:
 
 async def update_card(db: AsyncSession, card_pk: int, card_update: schemas.CardBase) -> Optional[models.Card]:
     update_data = card_update.model_dump(exclude_unset=True)
+
     if not update_data:
         return await get_card(db, card_pk)
 
-    stmt = update(models.Card)\
-        .where(models.Card.card_pk == card_pk)\
-        .values(**update_data)\
-        .returning(models.Card)
+    stmt = (
+        update(models.Card)
+        .where(models.Card.card_pk == card_pk)
+        .values(**update_data)
+    )
 
-    result = await db.execute(stmt)
+    await db.execute(stmt)
     await db.commit()
-    return result.scalar_one_or_none()
+
+    # 🔥 IMPORTANT : recharger l’objet correctement
+    updated_card = await get_card(db, card_pk)
+
+    return updated_card
+
 
 async def delete_card(db: AsyncSession, card_pk: int) -> bool:
     stmt = delete(models.Card)\
