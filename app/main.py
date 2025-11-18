@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .database import lifespan
-from .api import endpoints_cards, endpoints_audios
+from .api import endpoints_cards, endpoints_audios, endpoints_users
 from .crud_audios import AUDIO_DIR
 
 # -----------------------
@@ -48,6 +48,7 @@ app.mount("/audios/files", StaticFiles(directory=AUDIO_DIR), name="audios_files"
 # -----------------------
 # Inclusion des Routers
 # -----------------------
+app.include_router(endpoints_users.router)
 app.include_router(endpoints_cards.router)
 app.include_router(endpoints_audios.router)
 

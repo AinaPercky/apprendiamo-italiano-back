@@ -9,3 +9,9 @@ python-multipart
 databases
 python-dotenv # Utile pour la configuration DB
 httpx
+passlib[bcrypt]
+python-jose[cryptography]
+email-validator
+google-auth
+google-auth-oauthlib
+google-auth-httplib2

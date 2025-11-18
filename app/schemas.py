@@ -70,3 +70,121 @@ class AudioItem(AudioItemBase):
     model_config = {"from_attributes": True}
 
 Deck.model_rebuild()
+
+# ============================================================================
+# SCHEMAS UTILISATEUR
+# ============================================================================
+
+class UserBase(BaseModel):
+    email: str
+    username: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+
+class UserRegister(UserBase):
+    password: str
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+class UserGoogleLogin(BaseModel):
+    google_id: str
+    google_email: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    google_picture: Optional[str] = None
+
+class UserUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    bio: Optional[str] = None
+    profile_picture: Optional[str] = None
+
+class UserResponse(UserBase):
+    user_pk: int
+    is_active: bool
+    is_verified: bool
+    total_score: int
+    total_cards_learned: int
+    total_cards_reviewed: int
+    profile_picture: Optional[str] = None
+    bio: Optional[str] = None
+    created_at: datetime
+    last_login: Optional[datetime] = None
+    
+    model_config = {"from_attributes": True}
+
+class UserDetailResponse(UserResponse):
+    google_id: Optional[str] = None
+    google_picture: Optional[str] = None
+    updated_at: datetime
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: UserResponse
+
+class UserScoreBase(BaseModel):
+    score: int
+    is_correct: bool
+    time_spent: Optional[int] = None
+
+class UserScoreCreate(UserScoreBase):
+    deck_pk: Optional[int] = None
+    card_pk: Optional[int] = None
+
+class UserScore(UserScoreBase):
+    score_pk: int
+    user_pk: int
+    deck_pk: Optional[int] = None
+    card_pk: Optional[int] = None
+    created_at: datetime
+    
+    model_config = {"from_attributes": True}
+
+class UserAudioBase(BaseModel):
+    duration: Optional[int] = None
+    quality_score: Optional[int] = None
+    notes: Optional[str] = None
+
+class UserAudioCreate(UserAudioBase):
+    filename: str
+    audio_url: str
+    card_pk: Optional[int] = None
+
+class UserAudio(UserAudioBase):
+    audio_pk: int
+    user_pk: int
+    filename: str
+    audio_url: str
+    card_pk: Optional[int] = None
+    created_at: datetime
+    
+    model_config = {"from_attributes": True}
+
+class UserDeckBase(BaseModel):
+    deck_pk: int
+
+class UserDeckCreate(UserDeckBase):
+    pass
+
+class UserDeckResponse(BaseModel):
+    user_deck_pk: int
+    user_pk: int
+    deck_pk: int
+    correct_count: int
+    attempt_count: int
+    cards_mastered: int
+    added_at: datetime
+    last_studied: Optional[datetime] = None
+    
+    model_config = {"from_attributes": True}
+
+class UserStatsResponse(BaseModel):
+    total_score: int
+    total_cards_learned: int
+    total_cards_reviewed: int
+    total_decks: int
+    total_audio_records: int
+    last_login: Optional[datetime] = None
