@@ -10,6 +10,7 @@ databases
 python-dotenv # Utile pour la configuration DB
 httpx
 passlib[bcrypt]
+bcrypt==4.0.1
 python-jose[cryptography]
 email-validator
 google-auth

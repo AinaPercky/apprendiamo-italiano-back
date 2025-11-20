@@ -81,6 +81,13 @@ class User(Base):
     scores = relationship("UserScore", back_populates="user", cascade="all, delete-orphan")
     audio_records = relationship("UserAudio", back_populates="user", cascade="all, delete-orphan")
 
+    @property
+    def full_name(self) -> str:
+        """Retourne le nom complet de l'utilisateur ou son nom d'utilisateur."""
+        if self.first_name and self.last_name:
+            return f"{self.first_name} {self.last_name}"
+        return self.first_name or self.last_name or self.username or ""
+
 
 class UserDeck(Base):
     """Association entre utilisateurs et decks (flashcards)"""
