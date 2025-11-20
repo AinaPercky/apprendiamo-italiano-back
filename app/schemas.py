@@ -77,9 +77,7 @@ Deck.model_rebuild()
 
 class UserBase(BaseModel):
     email: str
-    username: str
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
+    full_name: str
 
 class UserRegister(UserBase):
     password: str
@@ -112,6 +110,8 @@ class UserResponse(UserBase):
     bio: Optional[str] = None
     created_at: datetime
     last_login: Optional[datetime] = None
+    email: str
+    full_name: str
     
     model_config = {"from_attributes": True}
 

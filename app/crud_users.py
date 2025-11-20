@@ -21,20 +21,26 @@ async def create_user(
     if result.scalars().first():
         raise ValueError("Email already registered")
     
-    # Vérifier que le username n'existe pas déjà
-    result = await db.execute(
-        select(models.User).where(models.User.username == user_data.username)
-    )
-    if result.scalars().first():
-        raise ValueError("Username already taken")
+    # Générer un username unique à partir de l'email
+    username = user_data.email.split('@')[0]
+    counter = 1
+    original_username = username
+    while True:
+        result = await db.execute(
+            select(models.User).where(models.User.username == username)
+        )
+        if not result.scalars().first():
+            break
+        username = f"{original_username}{counter}"
+        counter += 1
     
     # Créer l'utilisateur
     db_user = models.User(
         email=user_data.email,
-        username=user_data.username,
+        username=username,
         hashed_password=hash_password(user_data.password),
-        first_name=user_data.first_name,
-        last_name=user_data.last_name,
+        first_name=user_data.full_name,
+        last_name="",
         is_active=True,
         is_verified=False,
     )
@@ -355,15 +361,15 @@ async def add_user_deck(
     if result.scalars().first():
         raise ValueError("Deck already in user collection")
     
-    db_user_deck = models.UserDeck(
+    user_deck = models.UserDeck(
         user_pk=user_pk,
         deck_pk=deck_pk,
     )
     
-    db.add(db_user_deck)
+    db.add(user_deck)
     await db.commit()
-    await db.refresh(db_user_deck)
-    return db_user_deck
+    await db.refresh(user_deck)
+    return user_deck
 
 
 async def get_user_decks(
@@ -401,68 +407,48 @@ async def remove_user_deck(
     return True
 
 
-async def update_user_deck_stats(
-    db: AsyncSession,
-    user_pk: int,
-    deck_pk: int,
-    correct: bool,
-    cards_mastered: int = 0
-) -> models.UserDeck:
-    """Met à jour les statistiques d'un deck pour un utilisateur."""
-    result = await db.execute(
-        select(models.UserDeck).where(
-            (models.UserDeck.user_pk == user_pk) &
-            (models.UserDeck.deck_pk == deck_pk)
-        )
-    )
-    user_deck = result.scalars().first()
-    
-    if not user_deck:
-        raise ValueError("User deck not found")
-    
-    user_deck.attempt_count += 1
-    if correct:
-        user_deck.correct_count += 1
-    if cards_mastered > 0:
-        user_deck.cards_mastered = cards_mastered
-    user_deck.last_studied = datetime.utcnow()
-    
-    db.add(user_deck)
-    await db.commit()
-    await db.refresh(user_deck)
-    return user_deck
-
-
 # ============================================================================
-# OPÉRATIONS STATISTIQUES
+# STATISTIQUES UTILISATEUR
 # ============================================================================
 
 async def get_user_stats(
     db: AsyncSession,
     user_pk: int
-) -> dict:
+) -> schemas.UserStatsResponse:
     """Récupère les statistiques complètes d'un utilisateur."""
     user = await get_user_by_id(db, user_pk)
-    if not user:
-        return None
     
-    # Compter les decks
-    result = await db.execute(
-        select(models.UserDeck).where(models.UserDeck.user_pk == user_pk)
-    )
-    decks = result.scalars().all()
+    if not user:
+        raise ValueError("User not found")
     
     # Compter les enregistrements audio
-    result = await db.execute(
+    audio_result = await db.execute(
         select(models.UserAudio).where(models.UserAudio.user_pk == user_pk)
     )
-    audio_records = result.scalars().all()
+    audio_count = len(audio_result.scalars().all())
     
-    return {
-        "total_score": user.total_score,
-        "total_cards_learned": user.total_cards_learned,
-        "total_cards_reviewed": user.total_cards_reviewed,
-        "total_decks": len(decks),
-        "total_audio_records": len(audio_records),
-        "last_login": user.last_login,
-    }
+    # Compter les decks
+    decks_result = await db.execute(
+        select(models.UserDeck).where(models.UserDeck.user_pk == user_pk)
+    )
+    decks_count = len(decks_result.scalars().all())
+    
+    # Compter les scores
+    scores_result = await db.execute(
+        select(models.UserScore).where(models.UserScore.user_pk == user_pk)
+    )
+    scores = scores_result.scalars().all()
+    
+    # Calculer la moyenne des scores
+    average_score = 0
+    if scores:
+        average_score = sum(s.score for s in scores) / len(scores)
+    
+    return schemas.UserStatsResponse(
+        total_score=user.total_score,
+        total_cards_learned=user.total_cards_learned,
+        total_cards_reviewed=user.total_cards_reviewed,
+        total_decks=decks_count,
+        total_audio_records=audio_count,
+        last_login=user.last_login,
+    )
