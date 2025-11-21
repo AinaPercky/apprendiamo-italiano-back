@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, Text, TIMESTAMP, String, inspect, Boolean, DateTime
+from sqlalchemy import Column, ForeignKey, Integer, Text,Float, TIMESTAMP, String, inspect, Boolean, DateTime
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -30,6 +30,11 @@ class Card(Base):
     created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     next_review = Column(TIMESTAMP(timezone=True), nullable=False)
     box = Column(Integer, default=0)
+    # === NOUVEAU : Algorithme Anki ===
+    easiness = Column(Float, nullable=False, default=2.5)
+    interval = Column(Integer, nullable=False, default=0)
+    consecutive_correct = Column(Integer, nullable=False, default=0)
+    last_reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
     # === Gestion intelligente du type tags selon le dialecte ===
     # PostgreSQL → ARRAY(Text) (vrai tableau, indexable, rapide)
@@ -106,6 +111,19 @@ class UserDeck(Base):
     added_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_studied = Column(DateTime, nullable=True)
     
+    mastered_cards = Column(Integer, nullable=False, default=0)
+    learning_cards = Column(Integer, nullable=False, default=0)
+    review_cards = Column(Integer, nullable=False, default=0)
+
+    total_points = Column(Integer, nullable=False, default=0)
+    total_attempts = Column(Integer, nullable=False, default=0)
+    successful_attempts = Column(Integer, nullable=False, default=0)
+
+    points_frappe = Column(Integer, nullable=False, default=0)
+    points_association = Column(Integer, nullable=False, default=0)
+    points_qcm = Column(Integer, nullable=False, default=0)
+    points_classique = Column(Integer, nullable=False, default=0)  # Jusqu'à 100%
+    
     user = relationship("User", back_populates="decks")
     deck = relationship("Deck")
 
@@ -123,6 +141,7 @@ class UserScore(Base):
     score = Column(Integer, nullable=False)
     is_correct = Column(Boolean, nullable=False)
     time_spent = Column(Integer, nullable=True)  # en secondes
+    quiz_type = Column(String, nullable=False, default="classique")  # Type de quiz: frappe, association, qcm, classique
     
     # Timestamp
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

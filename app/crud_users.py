@@ -1,4 +1,5 @@
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 from . import models, schemas
 from .security import hash_password, verify_password
@@ -34,13 +35,18 @@ async def create_user(
         username = f"{original_username}{counter}"
         counter += 1
     
+    # Séparer full_name en first_name et last_name
+    name_parts = user_data.full_name.split(' ', 1)
+    first_name = name_parts[0] if name_parts else ""
+    last_name = name_parts[1] if len(name_parts) > 1 else ""
+    
     # Créer l'utilisateur
     db_user = models.User(
         email=user_data.email,
         username=username,
         hashed_password=hash_password(user_data.password),
-        first_name=user_data.full_name,
-        last_name="",
+        first_name=first_name,
+        last_name=last_name,
         is_active=True,
         is_verified=False,
     )
@@ -210,12 +216,15 @@ async def create_or_update_google_user(
 # OPÉRATIONS SCORES
 # ============================================================================
 
+from .core.anki import anki_review
+
 async def create_score(
     db: AsyncSession,
     user_pk: int,
     score_data: schemas.UserScoreCreate
 ) -> models.UserScore:
-    """Crée un nouvel enregistrement de score."""
+    """Crée un nouvel enregistrement de score et met à jour l'algorithme Anki."""
+    # 1. Créer le score
     db_score = models.UserScore(
         user_pk=user_pk,
         deck_pk=score_data.deck_pk,
@@ -223,11 +232,12 @@ async def create_score(
         score=score_data.score,
         is_correct=score_data.is_correct,
         time_spent=score_data.time_spent,
+        quiz_type=score_data.quiz_type  # Ajout du champ manquant
     )
     
     db.add(db_score)
     
-    # Mettre à jour les statistiques de l'utilisateur
+    # 2. Mettre à jour les statistiques de l'utilisateur
     user = await get_user_by_id(db, user_pk)
     if user:
         user.total_score += score_data.score
@@ -235,6 +245,80 @@ async def create_score(
             user.total_cards_learned += 1
         user.total_cards_reviewed += 1
         db.add(user)
+        
+    # 3. Algorithme Anki & Mise à jour de la carte
+    if score_data.card_pk:
+        # Récupérer la carte
+        result = await db.execute(select(models.Card).where(models.Card.card_pk == score_data.card_pk))
+        card = result.scalar_one_or_none()
+        
+        if card:
+            # Calculer le grade Anki (0-3) basé sur le score (0-100)
+            if score_data.score < 50:
+                grade = 0  # Again
+            elif score_data.score < 75:
+                grade = 1  # Hard
+            elif score_data.score < 90:
+                grade = 2  # Good
+            else:
+                grade = 3  # Easy
+            
+            # Appliquer l'algorithme
+            anki_stats = anki_review(
+                easiness=card.easiness,
+                interval=card.interval,
+                consecutive_correct=card.consecutive_correct,
+                grade=grade
+            )
+            
+            # Mettre à jour la carte
+            card.easiness = anki_stats["easiness"]
+            card.interval = anki_stats["interval"]
+            card.consecutive_correct = anki_stats["consecutive_correct"]
+            card.next_review = anki_stats["next_review"]
+            
+            # Mise à jour de la boîte (Leitner system simplifié)
+            if grade >= 2:
+                card.box += 1
+            elif grade == 0:
+                card.box = 0
+                
+            db.add(card)
+            
+            # Mettre à jour les stats du UserDeck si possible
+            if score_data.deck_pk:
+                ud_result = await db.execute(
+                    select(models.UserDeck).where(
+                        (models.UserDeck.user_pk == user_pk) & 
+                        (models.UserDeck.deck_pk == score_data.deck_pk)
+                    )
+                )
+                user_deck = ud_result.scalar_one_or_none()
+                if user_deck:
+                    user_deck.total_attempts += 1
+                    user_deck.total_points += score_data.score
+                    if score_data.is_correct:
+                        user_deck.successful_attempts += 1
+                    
+                    # Stats par type
+                    if score_data.quiz_type == "frappe":
+                        user_deck.points_frappe += score_data.score
+                    elif score_data.quiz_type == "association":
+                        user_deck.points_association += score_data.score
+                    elif score_data.quiz_type == "qcm":
+                        user_deck.points_qcm += score_data.score
+                    elif score_data.quiz_type == "classique":
+                        user_deck.points_classique += score_data.score
+                        
+                    # Stats de progression (simplifié)
+                    if grade >= 3:
+                        user_deck.mastered_cards += 1
+                    elif grade >= 1:
+                        user_deck.learning_cards += 1
+                    else:
+                        user_deck.review_cards += 1
+                        
+                    db.add(user_deck)
     
     await db.commit()
     await db.refresh(db_score)
@@ -369,7 +453,12 @@ async def add_user_deck(
     db.add(user_deck)
     await db.commit()
     await db.refresh(user_deck)
-    return user_deck
+    
+    # Charger la relation deck pour la réponse API
+    # On utilise une nouvelle requête pour charger l'objet avec sa relation
+    stmt = select(models.UserDeck).options(joinedload(models.UserDeck.deck)).where(models.UserDeck.user_deck_pk == user_deck.user_deck_pk)
+    result = await db.execute(stmt)
+    return result.unique().scalar_one()
 
 
 async def get_user_decks(
@@ -379,10 +468,11 @@ async def get_user_decks(
     """Récupère tous les decks d'un utilisateur."""
     result = await db.execute(
         select(models.UserDeck)
+        .options(joinedload(models.UserDeck.deck))
         .where(models.UserDeck.user_pk == user_pk)
         .order_by(models.UserDeck.added_at.desc())
     )
-    return result.scalars().all()
+    return result.unique().scalars().all()
 
 
 async def remove_user_deck(

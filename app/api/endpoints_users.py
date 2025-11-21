@@ -163,21 +163,8 @@ async def update_current_user_profile(
     return schemas.UserDetailResponse.model_validate(updated_user)
 
 
-@router.get("/{user_pk}", response_model=schemas.UserResponse)
-async def get_user(
-    user_pk: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """Récupère les informations publiques d'un utilisateur."""
-    user = await crud_users.get_user_by_id(db, user_pk)
-    
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
-    return schemas.UserResponse.model_validate(user)
+# Route déplacée à la fin du fichier pour éviter les conflits
+# @router.get("/{user_pk}") ...
 
 
 @router.post("/logout")
@@ -344,3 +331,24 @@ async def get_google_oauth_config():
     """Récupère la configuration Google OAuth pour le frontend."""
     from ..google_oauth import get_google_oauth_config
     return get_google_oauth_config()
+
+
+# ============================================================================
+# RECHERCHE UTILISATEUR (Doit être en dernier pour éviter les conflits)
+# ============================================================================
+
+@router.get("/{user_pk}", response_model=schemas.UserResponse)
+async def get_user(
+    user_pk: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Récupère les informations publiques d'un utilisateur."""
+    user = await crud_users.get_user_by_id(db, user_pk)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    return schemas.UserResponse.model_validate(user)
