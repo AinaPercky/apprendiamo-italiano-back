@@ -310,15 +310,8 @@ async def create_score(
                     elif score_data.quiz_type == "classique":
                         user_deck.points_classique += score_data.score
                         
-                    # Stats de progression (simplifié)
-                    if grade >= 3:
-                        user_deck.mastered_cards += 1
-                    elif grade >= 1:
-                        user_deck.learning_cards += 1
-                    else:
-                        user_deck.review_cards += 1
-                        
-                    db.add(user_deck)
+                    # Mise à jour des compteurs de cartes maîtrisées/en cours/à revoir
+                    await update_user_deck_anki_stats(db, user_deck)
     
     await db.commit()
     await db.refresh(db_score)
@@ -461,18 +454,67 @@ async def add_user_deck(
     return result.unique().scalar_one()
 
 
+async def update_user_deck_anki_stats(
+    db: AsyncSession,
+    user_deck: models.UserDeck
+) -> models.UserDeck:
+    """Met à jour les compteurs de cartes maîtrisées/en cours/à revoir pour un UserDeck."""
+    
+    # 1. Récupérer toutes les cartes du deck de l'utilisateur
+    result = await db.execute(
+        select(models.Card)
+        .where(models.Card.deck_pk == user_deck.deck_pk)
+    )
+    cards = result.scalars().all()
+    
+    # 2. Initialiser les compteurs
+    mastered_cards = 0
+    learning_cards = 0
+    review_cards = 0
+    
+    now = datetime.utcnow()
+    
+    for card in cards:
+        # Si la carte a un intervalle > 0 et next_review est dans le futur, elle est maîtrisée (vert)
+        if card.interval > 0 and card.next_review > now:
+            mastered_cards += 1
+        # Si la carte est à revoir (next_review est dans le passé ou aujourd'hui) (rouge)
+        elif card.next_review <= now:
+            review_cards += 1
+        # Sinon, elle est en cours d'apprentissage (orange)
+        else:
+            learning_cards += 1
+            
+    # 3. Mettre à jour le UserDeck
+    user_deck.mastered_cards = mastered_cards
+    user_deck.learning_cards = learning_cards
+    user_deck.review_cards = review_cards
+    
+    db.add(user_deck)
+    await db.commit()
+    await db.refresh(user_deck)
+    
+    return user_deck
+
+
 async def get_user_decks(
     db: AsyncSession,
     user_pk: int
 ) -> list[models.UserDeck]:
-    """Récupère tous les decks d'un utilisateur."""
+    """Récupère tous les decks de l'utilisateur avec les stats Anki à jour."""
     result = await db.execute(
         select(models.UserDeck)
         .options(joinedload(models.UserDeck.deck))
         .where(models.UserDeck.user_pk == user_pk)
         .order_by(models.UserDeck.added_at.desc())
     )
-    return result.unique().scalars().all()
+    user_decks = result.unique().scalars().all()
+    
+    # Mettre à jour les stats Anki pour chaque deck
+    for user_deck in user_decks:
+        await update_user_deck_anki_stats(db, user_deck)
+        
+    return user_decks
 
 
 async def remove_user_deck(
