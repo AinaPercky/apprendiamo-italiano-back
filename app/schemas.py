@@ -1,5 +1,5 @@
 # app/schemas.py
-from pydantic import BaseModel, field_validator, Field
+from pydantic import BaseModel, field_validator, Field, computed_field
 from datetime import datetime
 from typing import List, Optional, Literal
 import json
@@ -200,13 +200,17 @@ class UserDeckResponse(BaseModel):
         "arbitrary_types_allowed": True
     }
 
+    @computed_field
     @property
     def progress(self) -> float:
+        """Calcule le pourcentage de progression (cartes maîtrisées)"""
         total = self.mastered_cards + self.learning_cards + self.review_cards
         return round(self.mastered_cards / total * 100, 2) if total > 0 else 0.0
 
+    @computed_field
     @property
     def success_rate(self) -> float:
+        """Calcule le taux de réussite (pourcentage de réponses correctes)"""
         return round(self.successful_attempts / self.total_attempts * 100, 2) if self.total_attempts > 0 else 0.0
 
 
