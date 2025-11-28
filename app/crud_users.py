@@ -292,45 +292,48 @@ async def create_score(
                         (models.UserDeck.user_pk == user_pk) & 
                         (models.UserDeck.deck_pk == score_data.deck_pk)
                     )
-	                )
-	                user_deck = ud_result.scalar_one_or_none()
-	                
-	                # Si le UserDeck n'existe pas, le créer (cas du premier quiz)
-	                if not user_deck:
-	                    user_deck = models.UserDeck(
-	                        user_pk=user_pk,
-	                        deck_pk=score_data.deck_pk,
-	                    )
-	                    db.add(user_deck)
-	                    # On ne fait pas de commit ici, il sera fait à la fin de la fonction
-	                
-	                # Mise à jour des statistiques du UserDeck
-	                user_deck.total_attempts += 1
-	                user_deck.total_points += score_data.score
-	                if score_data.is_correct:
-	                    user_deck.successful_attempts += 1
-	                
-	                # Stats par type
-	                if score_data.quiz_type == "frappe":
-	                    user_deck.points_frappe += score_data.score
-	                elif score_data.quiz_type == "association":
-	                    user_deck.points_association += score_data.score
-	                elif score_data.quiz_type == "qcm":
-	                    user_deck.points_qcm += score_data.score
-	                elif score_data.quiz_type == "classique":
-	                    user_deck.points_classique += score_data.score
-	                    
-	                # Mise à jour des compteurs de cartes maîtrisées/en cours/à revoir
-	                await update_user_deck_anki_stats(db, user_deck)
-	                
-	                # Mise à jour des statistiques globales du Deck (total_correct, total_attempts)
-	                deck_result = await db.execute(select(models.Deck).where(models.Deck.deck_pk == score_data.deck_pk))
-	                deck = deck_result.scalar_one_or_none()
-	                if deck:
-	                    deck.total_attempts += 1
-	                    if score_data.is_correct:
-	                        deck.total_correct += 1
-	                    db.add(deck)
+                )
+                user_deck = ud_result.scalar_one_or_none()
+                
+                # Si le UserDeck n'existe pas, le créer (cas du premier quiz)
+                if not user_deck:
+                    user_deck = models.UserDeck(
+                        user_pk=user_pk,
+                        deck_pk=score_data.deck_pk,
+                    )
+                    db.add(user_deck)
+                    # Flush pour que SQLAlchemy initialise les valeurs par défaut
+                    await db.flush()
+                    # Rafraîchir l'objet pour obtenir les valeurs par défaut de la DB
+                    await db.refresh(user_deck)
+                
+                # Mise à jour des statistiques du UserDeck
+                user_deck.total_attempts += 1
+                user_deck.total_points += score_data.score
+                if score_data.is_correct:
+                    user_deck.successful_attempts += 1
+                
+                # Stats par type
+                if score_data.quiz_type == "frappe":
+                    user_deck.points_frappe += score_data.score
+                elif score_data.quiz_type == "association":
+                    user_deck.points_association += score_data.score
+                elif score_data.quiz_type == "qcm":
+                    user_deck.points_qcm += score_data.score
+                elif score_data.quiz_type == "classique":
+                    user_deck.points_classique += score_data.score
+                    
+                # Mise à jour des compteurs de cartes maîtrisées/en cours/à revoir
+                await update_user_deck_anki_stats(db, user_deck)
+                
+                # Mise à jour des statistiques globales du Deck (total_correct, total_attempts)
+                deck_result = await db.execute(select(models.Deck).where(models.Deck.deck_pk == score_data.deck_pk))
+                deck = deck_result.scalar_one_or_none()
+                if deck:
+                    deck.total_attempts += 1
+                    if score_data.is_correct:
+                        deck.total_correct += 1
+                    db.add(deck)
     
     await db.commit()
     await db.refresh(db_score)
