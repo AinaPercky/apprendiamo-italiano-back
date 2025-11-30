@@ -27,6 +27,14 @@ class DeckSimple(DeckBase):
     model_config = {"from_attributes": True}
 
 
+class DeckSimpleSafe(DeckSimple):
+    """Version de DeckSimple qui masque les stats globales pour éviter la confusion"""
+    @field_validator('total_correct', 'total_attempts', mode='before', check_fields=False)
+    @classmethod
+    def force_zero(cls, v):
+        return 0
+
+
 class CardBase(BaseModel):
     front: str
     back: str
@@ -174,7 +182,7 @@ class UserDeckResponse(BaseModel):
     user_deck_pk: int
     user_pk: int
     deck_pk: int
-    deck: DeckSimple  # Utiliser DeckSimple au lieu de Deck pour éviter MissingGreenlet
+    deck: DeckSimpleSafe  # Utiliser DeckSimpleSafe pour masquer les stats globales
 
     # Stats Anki
     mastered_cards: int = 0

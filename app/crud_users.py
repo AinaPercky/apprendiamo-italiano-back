@@ -478,7 +478,8 @@ async def add_user_deck(
 
 async def update_user_deck_anki_stats(
     db: AsyncSession,
-    user_deck: models.UserDeck
+    user_deck: models.UserDeck,
+    commit_changes: bool = False
 ) -> models.UserDeck:
     """Met à jour les compteurs de cartes maîtrisées/en cours/à revoir pour un UserDeck."""
     
@@ -513,8 +514,11 @@ async def update_user_deck_anki_stats(
     user_deck.review_cards = review_cards
     
     db.add(user_deck)
-    await db.commit()
-    await db.refresh(user_deck)
+    
+    # Commit conditionnel
+    if commit_changes:
+        await db.commit()
+        await db.refresh(user_deck)
     
     return user_deck
 
@@ -537,6 +541,66 @@ async def get_user_decks(
         await update_user_deck_anki_stats(db, user_deck)
         
     return user_decks
+
+
+async def get_all_decks_with_user_stats(
+    db: AsyncSession,
+    user_pk: int
+) -> list[models.UserDeck]:
+    """
+    Récupère TOUS les decks du système avec les stats personnalisées de l'utilisateur.
+    Pour les decks que l'utilisateur n'a pas encore commencés, retourne des stats à 0.
+    """
+    # 1. Récupérer tous les decks du système
+    all_decks_result = await db.execute(
+        select(models.Deck).order_by(models.Deck.name)
+    )
+    all_decks = all_decks_result.scalars().all()
+    
+    # 2. Récupérer les user_decks existants pour cet utilisateur
+    user_decks_result = await db.execute(
+        select(models.UserDeck)
+        .options(joinedload(models.UserDeck.deck))
+        .where(models.UserDeck.user_pk == user_pk)
+    )
+    user_decks_dict = {
+        ud.deck_pk: ud 
+        for ud in user_decks_result.unique().scalars().all()
+    }
+    
+    # 3. Créer une liste de UserDeck pour tous les decks
+    result_list = []
+    
+    for deck in all_decks:
+        if deck.deck_pk in user_decks_dict:
+            # L'utilisateur a déjà commencé ce deck
+            user_deck = user_decks_dict[deck.deck_pk]
+            await update_user_deck_anki_stats(db, user_deck)
+            result_list.append(user_deck)
+        else:
+            # L'utilisateur n'a pas encore commencé ce deck
+            # Créer un objet UserDeck temporaire avec des stats à 0
+            temp_user_deck = models.UserDeck(
+                user_deck_pk=0,  # Temporaire, non sauvegardé en DB
+                user_pk=user_pk,
+                deck_pk=deck.deck_pk,
+                deck=deck,
+                added_at=datetime.utcnow(),
+                last_studied=None,
+                total_points=0,
+                total_attempts=0,
+                successful_attempts=0,
+                points_frappe=0,
+                points_association=0,
+                points_qcm=0,
+                points_classique=0,
+                mastered_cards=0,
+                learning_cards=0,
+                review_cards=0
+            )
+            result_list.append(temp_user_deck)
+    
+    return result_list
 
 
 async def remove_user_deck(

@@ -1,0 +1,85 @@
+
+================================================================================
+                    RAPPORT DE TESTS AUTOMATIQUES
+================================================================================
+Date: 2025-11-21 12:41:11
+Durée totale: 1.80s
+
+RÉSUMÉ:
+--------
+Total de tests: 19
+✅ Réussis: 18
+❌ Échoués: 1
+⚠️ Avertissements: 0
+⏭️ Ignorés: 0
+
+Taux de réussite: 94.7%
+
+================================================================================
+DÉTAILS DES TESTS:
+================================================================================
+
+1. ✅ SUCCESS - Création d'utilisateur (0.610s)
+   📝 Utilisateur créé: test_1763718071.747626@example.com
+
+2. ❌ FAILED - Connexion utilisateur (0.301s)
+   📝 BUG: L'endpoint de login n'est pas implémenté
+   ⚠️ Erreur: Endpoint /api/users/login non trouvé dans le code
+
+3. ✅ SUCCESS - Création d'un deck (0.019s)
+   📝 Deck créé avec ID: 52
+
+4. ✅ SUCCESS - Récupération de la liste des decks (0.104s)
+   📝 Nombre de decks récupérés: 10
+
+5. ✅ SUCCESS - Récupération d'un deck par ID (0.013s)
+   📝 Deck récupéré: Test Deck 1763718073.018223
+
+6. ✅ SUCCESS - Création de cartes (0.051s)
+   📝 3 cartes créées avec succès
+
+7. ✅ SUCCESS - Récupération de toutes les cartes (0.009s)
+   📝 Nombre de cartes récupérées: 10
+
+8. ✅ SUCCESS - Récupération des cartes d'un deck (0.009s)
+   📝 Cartes du deck 52: 3
+
+9. ✅ SUCCESS - Mise à jour d'une carte (0.014s)
+   📝 Carte 1011 mise à jour
+
+10. ✅ SUCCESS - Ajout d'un deck à l'utilisateur (0.041s)
+   📝 Deck 52 ajouté à l'utilisateur
+
+11. ✅ SUCCESS - Récupération des decks utilisateur (0.016s)
+   📝 Nombre de decks utilisateur: 1
+
+12. ✅ SUCCESS - Quiz type 'frappe' (0.047s)
+   📝 Score frappe enregistré: 85/100
+
+13. ✅ SUCCESS - Quiz type 'association' (0.040s)
+   📝 Score association enregistré: 100/100
+
+14. ✅ SUCCESS - Quiz type 'QCM' (0.035s)
+   📝 Score QCM enregistré: 75/100
+
+15. ✅ SUCCESS - Quiz type 'classique' (0.039s)
+   📝 Score classique enregistré: 90/100
+
+16. ✅ SUCCESS - Quiz avec réponse incorrecte (0.038s)
+   📝 Réponse incorrecte enregistrée: 30/100
+
+17. ✅ SUCCESS - Vérification algorithme Anki (0.008s)
+   📝 Algorithme Anki actif: easiness modifié: 2.6, interval modifié: 6, consecutive_correct: 2
+
+18. ✅ SUCCESS - Vérification statistiques deck utilisateur (0.012s)
+   📝 Stats correctes: total_attempts: 5, total_points: 380, points_frappe: 85, points_association: 100, points_qcm: 75, points_classique: 120
+
+19. ✅ SUCCESS - Suppression des cartes de test (0.029s)
+   📝 3 cartes supprimées
+
+================================================================================
+🐛 BUGS IDENTIFIÉS:
+================================================================================
+1. Connexion utilisateur: Endpoint /api/users/login non trouvé dans le code
+
+================================================================================

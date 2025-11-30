@@ -1,0 +1,13 @@
+BUGS IDENTIFIÉS
+================================================================================
+
+1. Connexion utilisateur: Endpoint /api/users/login non trouvé dans le code
+2. Mise à jour d'une carte: Status 500: Internal Server Error
+3. Ajout d'un deck à l'utilisateur: 
+4. Quiz type 'frappe': Status 500: Internal Server Error
+5. Quiz type 'association': 
+6. Quiz type 'QCM': Status 500: Internal Server Error
+7. Quiz type 'classique': 
+8. Quiz avec réponse incorrecte: Status 500: Internal Server Error
+9. Vérification algorithme Anki: 
+10. Vérification statistiques deck utilisateur: Deck de test non trouvé dans les decks utilisateur

@@ -1,0 +1,4 @@
+BUGS IDENTIFIÉS
+================================================================================
+
+1. Connexion utilisateur: Endpoint /api/users/login non trouvé dans le code

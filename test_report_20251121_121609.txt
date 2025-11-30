@@ -1,0 +1,90 @@
+
+================================================================================
+                    RAPPORT DE TESTS AUTOMATIQUES
+================================================================================
+Date: 2025-11-21 12:16:05
+Durée totale: 3.71s
+
+RÉSUMÉ:
+--------
+Total de tests: 19
+✅ Réussis: 9
+❌ Échoués: 10
+⚠️ Avertissements: 0
+⏭️ Ignorés: 0
+
+Taux de réussite: 47.4%
+
+================================================================================
+DÉTAILS DES TESTS:
+================================================================================
+
+1. ✅ SUCCESS - Création d'utilisateur (0.692s)
+   📝 Utilisateur créé: test_1763716565.713419@example.com
+
+2. ❌ FAILED - Connexion utilisateur (0.304s)
+   📝 BUG: L'endpoint de login n'est pas implémenté
+   ⚠️ Erreur: Endpoint /api/users/login non trouvé dans le code
+
+3. ✅ SUCCESS - Création d'un deck (0.019s)
+   📝 Deck créé avec ID: 50
+
+4. ✅ SUCCESS - Récupération de la liste des decks (0.126s)
+   📝 Nombre de decks récupérés: 10
+
+5. ✅ SUCCESS - Récupération d'un deck par ID (0.017s)
+   📝 Deck récupéré: Test Deck 1763716567.096753
+
+6. ✅ SUCCESS - Création de cartes (0.092s)
+   📝 3 cartes créées avec succès
+
+7. ✅ SUCCESS - Récupération de toutes les cartes (0.014s)
+   📝 Nombre de cartes récupérées: 10
+
+8. ✅ SUCCESS - Récupération des cartes d'un deck (0.012s)
+   📝 Cartes du deck 50: 3
+
+9. ❌ FAILED - Mise à jour d'une carte (0.025s)
+   ⚠️ Erreur: Status 500: Internal Server Error
+
+10. ❌ FAILED - Ajout d'un deck à l'utilisateur (0.192s)
+
+11. ✅ SUCCESS - Récupération des decks utilisateur (0.408s)
+   📝 Nombre de decks utilisateur: 0
+
+12. ❌ FAILED - Quiz type 'frappe' (0.039s)
+   ⚠️ Erreur: Status 500: Internal Server Error
+
+13. ❌ FAILED - Quiz type 'association' (0.392s)
+
+14. ❌ FAILED - Quiz type 'QCM' (0.287s)
+   ⚠️ Erreur: Status 500: Internal Server Error
+
+15. ❌ FAILED - Quiz type 'classique' (0.045s)
+
+16. ❌ FAILED - Quiz avec réponse incorrecte (0.282s)
+   ⚠️ Erreur: Status 500: Internal Server Error
+
+17. ❌ FAILED - Vérification algorithme Anki (0.051s)
+
+18. ❌ FAILED - Vérification statistiques deck utilisateur (0.265s)
+   ⚠️ Erreur: Deck de test non trouvé dans les decks utilisateur
+
+19. ✅ SUCCESS - Suppression des cartes de test (0.040s)
+   📝 3 cartes supprimées
+
+================================================================================
+🐛 BUGS IDENTIFIÉS:
+================================================================================
+1. Connexion utilisateur: Endpoint /api/users/login non trouvé dans le code
+2. Mise à jour d'une carte: Status 500: Internal Server Error
+3. Ajout d'un deck à l'utilisateur: 
+4. Quiz type 'frappe': Status 500: Internal Server Error
+5. Quiz type 'association': 
+6. Quiz type 'QCM': Status 500: Internal Server Error
+7. Quiz type 'classique': 
+8. Quiz avec réponse incorrecte: Status 500: Internal Server Error
+9. Vérification algorithme Anki: 
+10. Vérification statistiques deck utilisateur: Deck de test non trouvé dans les decks utilisateur
+
+================================================================================

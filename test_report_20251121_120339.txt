@@ -1,0 +1,99 @@
+
+================================================================================
+                    RAPPORT DE TESTS AUTOMATIQUES
+================================================================================
+Date: 2025-11-21 12:03:37
+Durée totale: 2.42s
+
+RÉSUMÉ:
+--------
+Total de tests: 19
+✅ Réussis: 2
+❌ Échoués: 17
+⚠️ Avertissements: 0
+⏭️ Ignorés: 0
+
+Taux de réussite: 10.5%
+
+================================================================================
+DÉTAILS DES TESTS:
+================================================================================
+
+1. ❌ FAILED - Création d'utilisateur (0.836s)
+   📝 Internal Server Error
+   ⚠️ Erreur: Status 500: Internal Server Error
+
+2. ❌ FAILED - Connexion utilisateur (0.520s)
+
+3. ❌ FAILED - Création d'un deck (0.386s)
+   ⚠️ Erreur: Status 500: Internal Server Error
+
+4. ❌ FAILED - Récupération de la liste des decks (0.010s)
+
+5. ❌ FAILED - Récupération d'un deck par ID (0.000s)
+   ⚠️ Erreur: Aucun deck créé pour ce test
+
+6. ❌ FAILED - Création de cartes (0.000s)
+   ⚠️ Erreur: Aucun deck créé pour ajouter des cartes
+
+7. ✅ SUCCESS - Récupération de toutes les cartes (0.283s)
+   📝 Nombre de cartes récupérées: 10
+
+8. ❌ FAILED - Récupération des cartes d'un deck (0.000s)
+   ⚠️ Erreur: Aucun deck créé
+
+9. ❌ FAILED - Mise à jour d'une carte (0.000s)
+   ⚠️ Erreur: Aucune carte créée pour ce test
+
+10. ❌ FAILED - Ajout d'un deck à l'utilisateur (0.000s)
+   ⚠️ Erreur: Aucun deck créé
+
+11. ❌ FAILED - Récupération des decks utilisateur (0.003s)
+   ⚠️ Erreur: Status 403: {"detail":"Not authenticated"}
+
+12. ❌ FAILED - Quiz type 'frappe' (0.000s)
+   ⚠️ Erreur: Pas de cartes ou deck pour le quiz
+
+13. ❌ FAILED - Quiz type 'association' (0.000s)
+   ⚠️ Erreur: Pas de cartes ou deck pour le quiz
+
+14. ❌ FAILED - Quiz type 'QCM' (0.000s)
+   ⚠️ Erreur: Pas de cartes ou deck pour le quiz
+
+15. ❌ FAILED - Quiz type 'classique' (0.000s)
+   ⚠️ Erreur: Pas de cartes ou deck pour le quiz
+
+16. ❌ FAILED - Quiz avec réponse incorrecte (0.000s)
+   ⚠️ Erreur: Pas de cartes ou deck pour le quiz
+
+17. ❌ FAILED - Vérification algorithme Anki (0.000s)
+   ⚠️ Erreur: Pas de cartes pour vérifier
+
+18. ❌ FAILED - Vérification statistiques deck utilisateur (0.003s)
+   ⚠️ Erreur: Status 403: {"detail":"Not authenticated"}
+
+19. ✅ SUCCESS - Suppression des cartes de test (0.000s)
+   📝 Aucune carte à supprimer
+
+================================================================================
+🐛 BUGS IDENTIFIÉS:
+================================================================================
+1. Création d'utilisateur: Status 500: Internal Server Error
+2. Connexion utilisateur: 
+3. Création d'un deck: Status 500: Internal Server Error
+4. Récupération de la liste des decks: 
+5. Récupération d'un deck par ID: Aucun deck créé pour ce test
+6. Création de cartes: Aucun deck créé pour ajouter des cartes
+7. Récupération des cartes d'un deck: Aucun deck créé
+8. Mise à jour d'une carte: Aucune carte créée pour ce test
+9. Ajout d'un deck à l'utilisateur: Aucun deck créé
+10. Récupération des decks utilisateur: Status 403: {"detail":"Not authenticated"}
+11. Quiz type 'frappe': Pas de cartes ou deck pour le quiz
+12. Quiz type 'association': Pas de cartes ou deck pour le quiz
+13. Quiz type 'QCM': Pas de cartes ou deck pour le quiz
+14. Quiz type 'classique': Pas de cartes ou deck pour le quiz
+15. Quiz avec réponse incorrecte: Pas de cartes ou deck pour le quiz
+16. Vérification algorithme Anki: Pas de cartes pour vérifier
+17. Vérification statistiques deck utilisateur: Status 403: {"detail":"Not authenticated"}
+
+================================================================================

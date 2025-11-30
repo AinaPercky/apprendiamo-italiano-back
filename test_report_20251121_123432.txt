@@ -1,0 +1,87 @@
+
+================================================================================
+                    RAPPORT DE TESTS AUTOMATIQUES
+================================================================================
+Date: 2025-11-21 12:34:30
+Durée totale: 2.19s
+
+RÉSUMÉ:
+--------
+Total de tests: 19
+✅ Réussis: 15
+❌ Échoués: 4
+⚠️ Avertissements: 0
+⏭️ Ignorés: 0
+
+Taux de réussite: 78.9%
+
+================================================================================
+DÉTAILS DES TESTS:
+================================================================================
+
+1. ✅ SUCCESS - Création d'utilisateur (0.558s)
+   📝 Utilisateur créé: test_1763717670.738715@example.com
+
+2. ❌ FAILED - Connexion utilisateur (0.304s)
+   📝 BUG: L'endpoint de login n'est pas implémenté
+   ⚠️ Erreur: Endpoint /api/users/login non trouvé dans le code
+
+3. ✅ SUCCESS - Création d'un deck (0.016s)
+   📝 Deck créé avec ID: 51
+
+4. ✅ SUCCESS - Récupération de la liste des decks (0.105s)
+   📝 Nombre de decks récupérés: 10
+
+5. ✅ SUCCESS - Récupération d'un deck par ID (0.013s)
+   📝 Deck récupéré: Test Deck 1763717671.962999
+
+6. ✅ SUCCESS - Création de cartes (0.051s)
+   📝 3 cartes créées avec succès
+
+7. ✅ SUCCESS - Récupération de toutes les cartes (0.009s)
+   📝 Nombre de cartes récupérées: 10
+
+8. ✅ SUCCESS - Récupération des cartes d'un deck (0.008s)
+   📝 Cartes du deck 51: 3
+
+9. ❌ FAILED - Mise à jour d'une carte (0.016s)
+   ⚠️ Erreur: Status 500: Internal Server Error
+
+10. ❌ FAILED - Ajout d'un deck à l'utilisateur (0.024s)
+
+11. ✅ SUCCESS - Récupération des decks utilisateur (0.485s)
+   📝 Nombre de decks utilisateur: 0
+
+12. ✅ SUCCESS - Quiz type 'frappe' (0.046s)
+   📝 Score frappe enregistré: 85/100
+
+13. ✅ SUCCESS - Quiz type 'association' (0.033s)
+   📝 Score association enregistré: 100/100
+
+14. ✅ SUCCESS - Quiz type 'QCM' (0.035s)
+   📝 Score QCM enregistré: 75/100
+
+15. ✅ SUCCESS - Quiz type 'classique' (0.032s)
+   📝 Score classique enregistré: 90/100
+
+16. ✅ SUCCESS - Quiz avec réponse incorrecte (0.033s)
+   📝 Réponse incorrecte enregistrée: 30/100
+
+17. ✅ SUCCESS - Vérification algorithme Anki (0.009s)
+   📝 Algorithme Anki actif: easiness modifié: 2.6, interval modifié: 6, consecutive_correct: 2
+
+18. ❌ FAILED - Vérification statistiques deck utilisateur (0.012s)
+   ⚠️ Erreur: Deck de test non trouvé dans les decks utilisateur
+
+19. ✅ SUCCESS - Suppression des cartes de test (0.026s)
+   📝 3 cartes supprimées
+
+================================================================================
+🐛 BUGS IDENTIFIÉS:
+================================================================================
+1. Connexion utilisateur: Endpoint /api/users/login non trouvé dans le code
+2. Mise à jour d'une carte: Status 500: Internal Server Error
+3. Ajout d'un deck à l'utilisateur: 
+4. Vérification statistiques deck utilisateur: Deck de test non trouvé dans les decks utilisateur
+
+================================================================================

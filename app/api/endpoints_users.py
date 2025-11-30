@@ -207,6 +207,23 @@ async def get_user_decks(
     return [schemas.UserDeckResponse.model_validate(ud) for ud in user_decks]
 
 
+@router.get("/decks/all", response_model=list[schemas.UserDeckResponse])
+async def get_all_decks_with_user_stats(
+    current_user = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Récupère TOUS les decks du système avec les statistiques personnalisées de l'utilisateur.
+    
+    Pour un nouveau utilisateur :
+    - Tous les decks du système sont affichés
+    - Les decks non commencés ont une précision de 0%
+    - Les decks commencés affichent les vraies statistiques de l'utilisateur
+    """
+    all_decks = await crud_users.get_all_decks_with_user_stats(db, current_user.user_pk)
+    return [schemas.UserDeckResponse.model_validate(ud) for ud in all_decks]
+
+
 @router.delete("/decks/{deck_pk}")
 async def remove_deck_from_user(
     deck_pk: int,
