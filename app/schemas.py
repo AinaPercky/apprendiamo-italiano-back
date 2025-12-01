@@ -276,5 +276,6 @@ class AudioItemCreate(AudioItemBase):
 class AudioItem(AudioItemBase):
     id: int
     filename: str
+    audio_url: str
     
     model_config = {"from_attributes": True}
