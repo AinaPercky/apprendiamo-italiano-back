@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
-from .. import crud_cards, schemas
+from .. import crud_cards, crud_decks, schemas
 from ..database import get_db
 
 router = APIRouter(
@@ -26,6 +26,13 @@ async def read_deck(deck_pk: int, db: AsyncSession = Depends(get_db)):
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
     return deck
+
+@router.delete("/decks/{deck_pk}")
+async def delete_deck(deck_pk: int, db: AsyncSession = Depends(get_db)):
+    deleted = await crud_decks.delete_deck(db, deck_pk)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    return {"detail": "Deck deleted"}
 
 # === CARTES – IMPORTANT : on expose maintenant les champs Anki ===
 @router.post("/cards/", response_model=schemas.Card)

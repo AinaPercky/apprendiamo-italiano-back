@@ -608,7 +608,13 @@ async def remove_user_deck(
     user_pk: int,
     deck_pk: int
 ) -> bool:
-    """Supprime un deck de la collection d'un utilisateur."""
+    """
+    Supprime un deck de la collection d'un utilisateur.
+    
+    Retourne True même si le deck n'existe pas dans la collection,
+    car le résultat final est le même : le deck n'est pas dans la collection.
+    Cela permet de "supprimer" des decks système que l'utilisateur n'a jamais commencés.
+    """
     result = await db.execute(
         select(models.UserDeck).where(
             (models.UserDeck.user_pk == user_pk) &
@@ -617,11 +623,11 @@ async def remove_user_deck(
     )
     user_deck = result.scalars().first()
     
-    if not user_deck:
-        return False
+    if user_deck:
+        await db.delete(user_deck)
+        await db.commit()
     
-    await db.delete(user_deck)
-    await db.commit()
+    # Retourne toujours True car le résultat final est atteint
     return True
 
 
