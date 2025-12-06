@@ -183,3 +183,62 @@ class AudioItem(Base):
     category = Column(String, index=True, nullable=False)
     language = Column(String, default='it')
     ipa = Column(String, nullable=True)
+
+
+class CardPerformance(Base):
+    """Suivi des performances utilisateur par carte pour l'algorithme de sélection intelligente"""
+    __tablename__ = "card_performance"
+
+    performance_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    user_pk = Column(Integer, ForeignKey("users.user_pk", ondelete="CASCADE"), nullable=False, index=True)
+    card_pk = Column(Integer, ForeignKey("cards.card_pk", ondelete="CASCADE"), nullable=False, index=True)
+    deck_pk = Column(Integer, ForeignKey("decks.deck_pk", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Statistiques de performance
+    correct_count = Column(Integer, default=0, nullable=False)
+    incorrect_count = Column(Integer, default=0, nullable=False)
+    total_attempts = Column(Integer, default=0, nullable=False)
+    
+    # Score pour la priorisation : (incorrect_count * 2) - correct_count
+    # Plus le score est élevé, plus la carte doit être révisée
+    priority_score = Column(Float, default=0.0, nullable=False)
+    
+    # Timestamps
+    last_reviewed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relations
+    user = relationship("User")
+    card = relationship("Card")
+    deck = relationship("Deck")
+
+
+class QuizSession(Base):
+    """Historique des sessions de quiz pour éviter les répétitions jusqu'à ce que toutes les cartes soient vues"""
+    __tablename__ = "quiz_sessions"
+
+    session_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    user_pk = Column(Integer, ForeignKey("users.user_pk", ondelete="CASCADE"), nullable=False, index=True)
+    deck_pk = Column(Integer, ForeignKey("decks.deck_pk", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Configuration du quiz
+    card_count = Column(Integer, nullable=False)  # Nombre de cartes dans ce quiz
+    quiz_type = Column(String, nullable=False, default="classique")
+    
+    # État du cycle
+    cycle_number = Column(Integer, default=1, nullable=False)  # Quel cycle de révision (1, 2, 3...)
+    
+    # Cartes utilisées (stockées en JSON array d'IDs)
+    used_card_pks = Column(Text, nullable=False)  # JSON array: [1, 5, 12, ...]
+    
+    # Résultats
+    correct_count = Column(Integer, default=0)
+    total_questions = Column(Integer, default=0)
+    
+    # Timestamps
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    
+    # Relations
+    user = relationship("User")
+    deck = relationship("Deck")

@@ -279,3 +279,67 @@ class AudioItem(AudioItemBase):
     audio_url: str
     
     model_config = {"from_attributes": True}
+
+
+# ============================================================================
+# QUIZ ADAPTATIF
+# ============================================================================
+
+class QuizConfigRequest(BaseModel):
+    """Requête pour configurer un nouveau quiz"""
+    deck_pk: int
+    card_count: int = Field(..., ge=1, description="Nombre de cartes à utiliser dans le quiz")
+    quiz_type: Literal["frappe", "association", "qcm", "classique"] = "classique"
+
+
+class QuizCardPublic(BaseModel):
+    """Carte simplifiée pour le quiz (évite les accès DB paresseux)"""
+    card_pk: int
+    front: str
+    back: str
+    pronunciation: Optional[str] = None
+    image: Optional[str] = None
+    box: int
+    tags: List[str] = []
+
+    model_config = {"from_attributes": True}
+
+
+class QuizCardSelection(BaseModel):
+    """Réponse retournant les cartes sélectionnées pour un quiz"""
+    session_pk: int
+    deck_pk: int
+    cycle_number: int
+    total_cards_in_deck: int
+    requested_card_count: int
+    selected_cards: List[QuizCardPublic]
+    message: str  # Info sur le cycle, les cartes restantes, etc.
+
+
+class QuizSessionResponse(BaseModel):
+    """Informations sur une session de quiz"""
+    session_pk: int
+    deck_pk: int
+    card_count: int
+    quiz_type: str
+    cycle_number: int
+    correct_count: int
+    total_questions: int
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    
+    model_config = {"from_attributes": True}
+
+
+class CardPerformanceResponse(BaseModel):
+    """Statistiques de performance pour une carte"""
+    performance_pk: int
+    card_pk: int
+    correct_count: int
+    incorrect_count: int
+    total_attempts: int
+    priority_score: float
+    last_reviewed_at: Optional[datetime] = None
+    
+    model_config = {"from_attributes": True}
+

@@ -498,14 +498,17 @@ async def update_user_deck_anki_stats(
     now = datetime.utcnow()
     
     for card in cards:
-        # Si la carte a un intervalle > 0 et next_review est dans le futur, elle est maîtrisée (vert)
-        if card.interval > 0 and card.next_review > now:
+        # Logique personnalisée selon la demande utilisateur :
+        # - Maîtrisées : Cartes avec un intervalle > 0 (Réussies au moins une fois)
+        # - À revoir : Cartes vues (last_reviewed_at existe) mais intervalle 0 (Echec ou à refaire)
+        # - En cours : Cartes jamais vues (ou le reste du paquet)
+        
+        if card.interval > 0:
             mastered_cards += 1
-        # Si la carte est à revoir (next_review est dans le passé ou aujourd'hui) (rouge)
-        elif card.next_review <= now:
+        elif card.last_reviewed_at is not None:
             review_cards += 1
-        # Sinon, elle est en cours d'apprentissage (orange)
         else:
+            # Jamais vue -> "En cours" (dans le sens "Il reste ces cartes à faire")
             learning_cards += 1
             
     # 3. Mettre à jour le UserDeck
