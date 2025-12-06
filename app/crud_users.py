@@ -360,7 +360,9 @@ async def get_user_scores(
 async def get_user_deck_scores(
     db: AsyncSession,
     user_pk: int,
-    deck_pk: int
+    deck_pk: int,
+    limit: int = 100,
+    offset: int = 0
 ) -> list[models.UserScore]:
     """Récupère les scores d'un utilisateur pour un deck spécifique."""
     result = await db.execute(
@@ -370,6 +372,8 @@ async def get_user_deck_scores(
             (models.UserScore.deck_pk == deck_pk)
         )
         .order_by(models.UserScore.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     return result.scalars().all()
 
@@ -604,6 +608,61 @@ async def get_all_decks_with_user_stats(
             result_list.append(temp_user_deck)
     
     return result_list
+
+
+async def get_user_deck_stats(
+    db: AsyncSession,
+    user_pk: int,
+    deck_pk: int
+) -> models.UserDeck:
+    """
+    Récupère les statistiques d'un deck spécifique pour l'utilisateur.
+    Gère le cas où le deck n'a pas encore été commencé (retourne des stats à 0).
+    """
+    # 1. Vérifier si un UserDeck existe
+    result = await db.execute(
+        select(models.UserDeck)
+        .options(joinedload(models.UserDeck.deck))
+        .where(
+            (models.UserDeck.user_pk == user_pk) & 
+            (models.UserDeck.deck_pk == deck_pk)
+        )
+    )
+    user_deck = result.unique().scalar_one_or_none()
+
+    if user_deck:
+        # Mettre à jour les stats Anki avant de retourner
+        await update_user_deck_anki_stats(db, user_deck)
+        return user_deck
+
+    # 2. Si non, récupérer le deck de base
+    deck_result = await db.execute(
+        select(models.Deck).where(models.Deck.deck_pk == deck_pk)
+    )
+    deck = deck_result.scalar_one_or_none()
+
+    if not deck:
+        raise ValueError("Deck not found")
+
+    # 3. Créer un objet UserDeck temporaire (stats à 0)
+    return models.UserDeck(
+        user_deck_pk=0,
+        user_pk=user_pk,
+        deck_pk=deck_pk,
+        deck=deck,
+        added_at=datetime.utcnow(),
+        last_studied=None,
+        total_points=0,
+        total_attempts=0,
+        successful_attempts=0,
+        points_frappe=0,
+        points_association=0,
+        points_qcm=0,
+        points_classique=0,
+        mastered_cards=0,
+        learning_cards=0,
+        review_cards=0
+    )
 
 
 async def remove_user_deck(
