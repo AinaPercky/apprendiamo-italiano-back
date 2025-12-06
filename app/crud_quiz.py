@@ -245,38 +245,44 @@ async def select_cards_for_quiz(
     if card_count > total_cards:
         card_count = total_cards
     
-    # Déterminer le cycle et les cartes déjà utilisées
+    # Déterminer le cycle et les cartes déjà utilisées (pour le message seulement)
     cycle_number, used_card_pks = await get_current_cycle_info(db, user_pk, deck_pk)
     
-    # PREMIER CYCLE ou CYCLES INITIAUX : Sélection aléatoire sans répétition
-    if cycle_number == 1:
-        # Exclure les cartes déjà utilisées
-        available_cards = [c for c in all_cards if c.card_pk not in used_card_pks]
-        
-        if len(available_cards) < card_count:
-            # Pas assez de cartes non utilisées, prendre ce qui reste
-            selected = available_cards
-            remaining = total_cards - len(used_card_pks) - len(selected)
-            message = f"Cycle {cycle_number}: {len(selected)} cartes sélectionnées. {remaining} cartes restantes avant fin du cycle."
-        else:
-            # Sélection aléatoire parmi les cartes disponibles
-            selected = random.sample(available_cards, card_count)
-            remaining = len(available_cards) - card_count
-            message = f"Cycle {cycle_number}: {card_count} cartes sélectionnées aléatoirement. {remaining} cartes restantes."
-        
-        return (selected, cycle_number, message)
+    # 1. Récupérer les performances de toutes les cartes (pour le score de priorité)
+    performances = await get_deck_performances(db, user_pk, deck_pk)
+    perf_dict = {p.card_pk: p for p in performances}
     
-    # CYCLES SUIVANTS : Sélection pondérée basée sur les performances
-    else:
-        # Récupérer les performances de toutes les cartes
-        performances = await get_deck_performances(db, user_pk, deck_pk)
+    # 2. Séparer les cartes en groupes de priorité
+    now = datetime.utcnow()
+    review_cards = [] # Cartes à revoir (next_review <= now)
+    learning_new_cards = [] # Cartes en cours ou nouvelles (next_review > now)
+    
+    for card in all_cards:
+        if card.next_review <= now:
+            review_cards.append(card)
+        else:
+            learning_new_cards.append(card)
+            
+    # 3. Sélectionner les cartes
+    selected_cards = []
+    
+    # Priorité 1: Toutes les cartes à revoir (Review)
+    # On prend toutes les cartes à revoir, puis on les mélange pour ne pas toujours avoir le même ordre
+    random.shuffle(review_cards)
+    
+    cards_needed = card_count
+    
+    # Ajouter les cartes à revoir
+    if len(review_cards) > 0:
+        take_count = min(cards_needed, len(review_cards))
+        selected_cards.extend(review_cards[:take_count])
+        cards_needed -= take_count
         
-        # Créer un dictionnaire card_pk -> performance
-        perf_dict = {p.card_pk: p for p in performances}
-        
-        # Calculer les poids pour chaque carte
+    # Priorité 2: Cartes en cours ou nouvelles (Learning/New)
+    if cards_needed > 0 and len(learning_new_cards) > 0:
+        # Calculer les poids pour les cartes Learning/New
         card_weights = []
-        for card in all_cards:
+        for card in learning_new_cards:
             perf = perf_dict.get(card.card_pk)
             if perf:
                 # Poids = 1 + max(priority_score, 0)
@@ -287,39 +293,36 @@ async def select_cards_for_quiz(
                 weight = 1.0
             
             card_weights.append((card, weight))
-        
-        # Sélection pondérée
+            
+        # Sélection pondérée parmi les cartes Learning/New
         cards_list = [cw[0] for cw in card_weights]
         weights_list = [cw[1] for cw in card_weights]
         
-        # Vérifier qu'on ne demande pas plus que ce qui est disponible
-        actual_count = min(card_count, len(cards_list))
-        
-        selected = random.choices(
+        # Sélectionner le nombre de cartes restantes
+        selected_from_learning = random.choices(
             cards_list,
             weights=weights_list,
-            k=actual_count
+            k=cards_needed
         )
         
-        # Éviter les doublons (au cas où)
-        selected_unique = []
-        seen_pks = set()
-        for card in selected:
-            if card.card_pk not in seen_pks:
-                selected_unique.append(card)
-                seen_pks.add(card.card_pk)
+        # Ajouter les cartes sélectionnées (en évitant les doublons, bien que peu probable ici)
+        selected_cards.extend(selected_from_learning)
         
-        # Si on n'a pas assez de cartes uniques, compléter
-        if len(selected_unique) < actual_count:
-            missing = actual_count - len(selected_unique)
-            remaining_cards = [c for c in cards_list if c.card_pk not in seen_pks]
-            if remaining_cards:
-                additional = random.sample(remaining_cards, min(missing, len(remaining_cards)))
-                selected_unique.extend(additional)
-        
-        message = f"Cycle {cycle_number}: {len(selected_unique)} cartes sélectionnées avec priorisation intelligente (cartes difficiles favorisées)."
-        
-        return (selected_unique, cycle_number, message)
+    # 4. Finalisation
+    # Mélanger la sélection finale pour ne pas avoir Review en premier
+    random.shuffle(selected_cards)
+    
+    # S'assurer qu'il n'y a pas de doublons (juste au cas où random.choices aurait des cartes en double)
+    selected_unique = []
+    seen_pks = set()
+    for card in selected_cards:
+        if card.card_pk not in seen_pks:
+            selected_unique.append(card)
+            seen_pks.add(card.card_pk)
+            
+    message = f"Quiz de {len(selected_unique)} cartes (Priorité: {len(review_cards)} à revoir)."
+    
+    return (selected_unique, cycle_number, message)
 
 
 # ============================================================================
