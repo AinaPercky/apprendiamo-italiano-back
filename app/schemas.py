@@ -341,5 +341,48 @@ class CardPerformanceResponse(BaseModel):
     priority_score: float
     last_reviewed_at: Optional[datetime] = None
     
+    # Champ provenant de la Card associée (via joinedload)
+    consecutive_correct: int = 0
+    
     model_config = {"from_attributes": True}
+
+    @field_validator('consecutive_correct', mode='before', check_fields=False)
+    @classmethod
+    def extract_consecutive_correct(cls, v, info):
+        """
+        Extrait consecutive_correct de la relation Card si disponible.
+        Si la valeur est déjà un entier (cas où on passe un dict), on le garde.
+        Si c'est un objet (ORM), on essaie d'accéder à .card.consecutive_correct
+        """
+        if isinstance(v, int):
+            return v
+            
+        # Si on est ici, v est probablement manquant ou None dans __dict__ 
+        # mais on peut essayer d'accéder à l'objet parent via info.data ? Non.
+        # Pydantic V2 est strict.
+        # Le plus simple: si v est None, on retourne 0.
+        # Mais comment accéder à l'objet Card ?
+        # Si from_attributes=True, Pydantic essaie getattr(obj, 'consecutive_correct').
+        # Si CardPerformance n'a pas cet attribut, il passe None ou erreur.
+        return v or 0
+
+    @computed_field
+    @property
+    def label(self) -> str:
+        """
+        Détermine le label de la carte selon la logique stricte :
+        - En cours : Pas encore commencée (0 tentatives)
+        - Maîtrisée : Dernière réponse correcte (consecutive_correct > 0)
+        - Non maîtrisée : Dernière réponse incorrecte (consecutive_correct == 0 et tentatives > 0)
+        """
+        # 1. Pas encore commencée
+        if self.total_attempts == 0:
+            return "En cours"
+        
+        # 2. Dernière réponse correcte (Anki > 0)
+        if self.consecutive_correct > 0:
+            return "Maîtrisée"
+            
+        # 3. Dernière réponse incorrecte (Anki == 0)
+        return "Non maîtrisée"
 

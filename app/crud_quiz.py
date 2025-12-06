@@ -11,7 +11,7 @@ Implémente:
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, or_
-from sqlalchemy import select, and_, func, or_
+from sqlalchemy.orm import joinedload
 from . import models
 from .core.anki import anki_review
 from typing import List, Tuple, Optional
@@ -146,14 +146,14 @@ async def get_deck_performances(
     deck_pk: int
 ) -> List[models.CardPerformance]:
     """Récupère toutes les performances pour un deck donné"""
-    stmt = select(models.CardPerformance).where(
+    stmt = select(models.CardPerformance).options(joinedload(models.CardPerformance.card)).where(
         and_(
             models.CardPerformance.user_pk == user_pk,
             models.CardPerformance.deck_pk == deck_pk
         )
     )
     result = await db.execute(stmt)
-    return result.scalars().all()
+    return result.unique().scalars().all()
 
 
 # ============================================================================

@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 from . import models, schemas
@@ -487,35 +487,87 @@ async def update_user_deck_anki_stats(
 ) -> models.UserDeck:
     """Met à jour les compteurs de cartes maîtrisées/en cours/à revoir pour un UserDeck."""
     
-    # 1. Récupérer toutes les cartes du deck de l'utilisateur
-    result = await db.execute(
-        select(models.Card)
-        .where(models.Card.deck_pk == user_deck.deck_pk)
-    )
-    cards = result.scalars().all()
+    # 1. Compter le nombre total de cartes dans le deck (Shared)
+    stmt_total = select(func.count(models.Card.card_pk)).where(models.Card.deck_pk == user_deck.deck_pk)
+    result_total = await db.execute(stmt_total)
+    total_cards = result_total.scalar() or 0
     
-    # 2. Initialiser les compteurs
+    # 2. Récupérer les performances de l'utilisateur pour ce deck
+    stmt_perf = select(models.CardPerformance).where(
+        (models.CardPerformance.user_pk == user_deck.user_pk) &
+        (models.CardPerformance.deck_pk == user_deck.deck_pk)
+    )
+    result_perf = await db.execute(stmt_perf)
+    performances = result_perf.scalars().all()
+    
+    # 3. Initialiser les compteurs
     mastered_cards = 0
-    learning_cards = 0
     review_cards = 0
     
-    now = datetime.utcnow()
+    # Set des cartes ayant une performance (pour déduire celles qui n'en ont pas)
+    seen_cards_count = 0
     
-    for card in cards:
-        # Logique personnalisée selon la demande utilisateur :
-        # - Maîtrisées : Cartes avec un intervalle > 0 (Réussies au moins une fois)
-        # - À revoir : Cartes vues (last_reviewed_at existe) mais intervalle 0 (Echec ou à refaire)
-        # - En cours : Cartes jamais vues (ou le reste du paquet)
-        
-        if card.interval > 0:
-            mastered_cards += 1
-        elif card.last_reviewed_at is not None:
-            review_cards += 1
-        else:
-            # Jamais vue -> "En cours" (dans le sens "Il reste ces cartes à faire")
-            learning_cards += 1
+    for perf in performances:
+        if perf.total_attempts > 0:
+            seen_cards_count += 1
+            # Logique alignée avec schemas.py (Label)
             
-    # 3. Mettre à jour le UserDeck
+            # Maîtrisée : Dernière réponse correcte (consecutive_correct provient d'un join normalement, 
+            # mais ici on doit déduire ou charger.
+            # ATTENTION : CardPerformance contient les stats, mais consecutive_correct est sur Card pour Anki.
+            # MAIS Card est partagé. 
+            # D'après les dernières modifications, on veut que le statut suive la performance perso.
+            # On va utiliser une logique simplifiée basée sur CardPerformance car on ne veut pas join Card pour chaque perf dans une boucle.
+            
+            # Logique stricte :
+            # Maîtrisée = correct_count > 0 ET dernière réponse PAS incorrecte?
+            # Sans timestamp précis par réponse, difficile de savoir "dernière".
+            # Cependant, schemas.py utilise consecutive_correct de la CARTE.
+            # Si on veut aligner TOTALEMENT, on devrait join Cards.
+            pass
+
+    # RE-STRATÉGIE : Faire une requête aggrégée ou join
+    # On va join CardPerformance et Card pour avoir les données exactes
+    # Cependant, Card.consecutive_correct est GLOBAL. Si on l'utilise pour UserStats, on a le problème original.
+    # Pour l'instant, schemas.py utilise Card.consecutive_correct.
+    # SI Card.consecutive_correct est utilisé pour déterminer "Maîtrisée", alors on DOIT l'utiliser ici.
+    
+    stmt_join = select(models.CardPerformance, models.Card).join(
+        models.Card, models.CardPerformance.card_pk == models.Card.card_pk
+    ).where(
+        (models.CardPerformance.user_pk == user_deck.user_pk) &
+        (models.CardPerformance.deck_pk == user_deck.deck_pk)
+    )
+    result_join = await db.execute(stmt_join)
+    rows = result_join.all() # [(CardPerformance, Card), ...]
+    
+    mastered_cards = 0
+    review_cards = 0
+    
+    processed_card_pks = set()
+    
+    for perf, card in rows:
+        processed_card_pks.add(perf.card_pk)
+        
+        # Logique Label (schemas.py)
+        # En cours: attempts == 0 (exclus par la requête perf w/ attempts>0 si on filtre, mais ici on prend tout)
+        if perf.total_attempts == 0:
+            continue # Est "En cours"
+            
+        # Maîtrisée: consecutive_correct > 0
+        if card.consecutive_correct > 0:
+            mastered_cards += 1
+        else:
+            # Non maîtrisée (consecutive_correct == 0, attempts > 0) -> Review
+            review_cards += 1
+            
+    # Learning (En cours) = Total - (Mastered + Review)
+    # Cela couvre :
+    # 1. Les cartes sans enregistrement CardPerformance
+    # 2. Les cartes avec CardPerformance mais attempts == 0
+    learning_cards = max(0, total_cards - mastered_cards - review_cards)
+            
+    # 4. Mettre à jour le UserDeck
     user_deck.mastered_cards = mastered_cards
     user_deck.learning_cards = learning_cards
     user_deck.review_cards = review_cards

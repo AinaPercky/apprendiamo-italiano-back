@@ -147,7 +147,18 @@ async def record_answer(
             is_correct
         )
         
-        return schemas.CardPerformanceResponse.model_validate(performance)
+        # Charger la carte pour avoir consecutive_correct
+        from sqlalchemy import select
+        from ..models import Card
+        stmt = select(Card).where(Card.card_pk == card_pk)
+        result = await db.execute(stmt)
+        card = result.scalar_one_or_none()
+        
+        # Injecter consecutive_correct manuellement
+        perf_dict = performance.__dict__.copy()
+        perf_dict['consecutive_correct'] = card.consecutive_correct if card else 0
+        
+        return schemas.CardPerformanceResponse(**perf_dict)
         
     except Exception as e:
         raise HTTPException(
@@ -237,7 +248,12 @@ async def get_deck_performances(
         deck_pk
     )
     
-    return [schemas.CardPerformanceResponse.model_validate(p) for p in performances]
+    return [
+        schemas.CardPerformanceResponse(
+            **p.__dict__,
+            consecutive_correct=p.card.consecutive_correct if p.card else 0
+        ) for p in performances
+    ]
 
 
 # ============================================================================
