@@ -39,7 +39,7 @@ class CardBase(BaseModel):
     front: str
     back: str
     pronunciation: Optional[str] = None
-    image: Optional[str] = None
+    image: Optional[str] = None # Contient désormais l'image en Base64 (Data URI) ou l'URL originale si non convertie
     box: int = 0
     tags: List[str] = []
 
@@ -298,7 +298,7 @@ class QuizCardPublic(BaseModel):
     front: str
     back: str
     pronunciation: Optional[str] = None
-    image: Optional[str] = None
+    image: Optional[str] = None # Contient désormais l'image en Base64 (Data URI) ou l'URL originale si non convertie
     box: int
     tags: List[str] = []
 
