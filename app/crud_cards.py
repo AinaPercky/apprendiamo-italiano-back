@@ -6,6 +6,9 @@ from . import models, schemas
 import uuid
 from typing import List, Optional
 from datetime import datetime, timedelta
+import base64
+import requests
+from requests.exceptions import RequestException
 
 def generate_id_json() -> str:
     return str(uuid.uuid4()).replace('-', '')[:7]
@@ -33,12 +36,38 @@ async def get_decks(db: AsyncSession, skip: int = 0, limit: int = 10, search: Op
 async def get_deck(db: AsyncSession, deck_pk: int) -> Optional[models.Deck]:
     stmt = select(models.Deck).options(joinedload(models.Deck.cards)).where(models.Deck.deck_pk == deck_pk)
     result = await db.execute(stmt)
-    return result.unique().scalar_one_or_none()
+     return result.unique().scalars().all()
+
+
+# ==================== UTILS ====================
+
+def url_to_base64(url: str) -> Optional[str]:
+    """Télécharge une image depuis une URL et la convertit en chaîne Base64 (Data URI)."""
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()  # Lève une exception pour les codes d'erreur HTTP (4xx ou 5xx)
+        
+        # Déterminer le type de contenu (Content-Type)
+        content_type = response.headers.get('Content-Type', 'image/jpeg')
+        
+        # Encoder le contenu en Base64
+        base64_encoded_data = base64.b64encode(response.content)
+        base64_string = base64_encoded_data.decode('utf-8')
+        
+        # Formater l'URI de données (Data URI scheme)
+        return f"data:{content_type};base64,{base64_string}"
+        
+    except RequestException as e:
+        print(f"Erreur lors du téléchargement de l'image depuis {url}: {e}")
+        return None
+    except Exception as e:
+        print(f"Une erreur inattendue s'est produite lors de la conversion Base64 pour {url}: {e}")
+        return None
 
 
 # ==================== CARTES – MISE À JOUR ANKI CRITIQUE ====================
 
-async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card:
+async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card:ard:
     id_json = card.id_json or generate_id_json()
     now = datetime.utcnow()
     db_card = models.Card(
@@ -47,7 +76,9 @@ async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card
         front=card.front,
         back=card.back,
         pronunciation=card.pronunciation,
-        image=card.image,
+        # === NOUVEAU : Conversion de l'URL d'image en Base64 ===
+        image=url_to_base64(card.image) if card.image and card.image.startswith('http') else card.image,
+        # =======================================================
         created_at=now,
         next_review=now + timedelta(days=1),  # Première révision demain
         box=0,
