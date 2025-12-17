@@ -36,7 +36,7 @@ async def get_decks(db: AsyncSession, skip: int = 0, limit: int = 10, search: Op
 async def get_deck(db: AsyncSession, deck_pk: int) -> Optional[models.Deck]:
     stmt = select(models.Deck).options(joinedload(models.Deck.cards)).where(models.Deck.deck_pk == deck_pk)
     result = await db.execute(stmt)
-     return result.unique().scalars().all()
+    return result.unique().scalar_one_or_none()
 
 
 # ==================== UTILS ====================
@@ -67,7 +67,7 @@ def url_to_base64(url: str) -> Optional[str]:
 
 # ==================== CARTES – MISE À JOUR ANKI CRITIQUE ====================
 
-async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card:ard:
+async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card:
     id_json = card.id_json or generate_id_json()
     now = datetime.utcnow()
     db_card = models.Card(
