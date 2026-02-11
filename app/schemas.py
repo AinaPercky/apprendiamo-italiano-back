@@ -40,6 +40,14 @@ class CardBase(BaseModel):
     back: str
     pronunciation: Optional[str] = None
     image: Optional[str] = None # Contient désormais l'image en Base64 (Data URI) ou l'URL originale si non convertie
+    
+    # Nouveaux champs optionnels
+    explanation_it: Optional[str] = None
+    translation_en: Optional[str] = None
+    translation_de: Optional[str] = None
+    translation_mg: Optional[str] = None
+    example: Optional[str] = None
+
     box: int = 0
     tags: List[str] = []
 
@@ -299,6 +307,14 @@ class QuizCardPublic(BaseModel):
     back: str
     pronunciation: Optional[str] = None
     image: Optional[str] = None # Contient désormais l'image en Base64 (Data URI) ou l'URL originale si non convertie
+    
+    # Nouveaux champs optionnels
+    explanation_it: Optional[str] = None
+    translation_en: Optional[str] = None
+    translation_de: Optional[str] = None
+    translation_mg: Optional[str] = None
+    example: Optional[str] = None
+
     box: int
     tags: List[str] = []
 

@@ -30,6 +30,14 @@ class Card(Base):
     created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     next_review = Column(TIMESTAMP(timezone=True), nullable=False)
     box = Column(Integer, default=0)
+    
+    # === NOUVEAUX CHAMPS (2026-02-11) ===
+    explanation_it = Column(Text, nullable=True)
+    translation_en = Column(Text, nullable=True)
+    translation_de = Column(Text, nullable=True)
+    translation_mg = Column(Text, nullable=True)
+    example = Column(Text, nullable=True)
+    
     # === NOUVEAU : Algorithme Anki ===
     easiness = Column(Float, nullable=False, default=2.5)
     interval = Column(Integer, nullable=False, default=0)

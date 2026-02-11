@@ -79,6 +79,14 @@ async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card
         # === NOUVEAU : Conversion de l'URL d'image en Base64 ===
         image=url_to_base64(card.image) if card.image and card.image.startswith('http') else card.image,
         # =======================================================
+        
+        # Nouveaux champs optionnels
+        explanation_it=card.explanation_it,
+        translation_en=card.translation_en,
+        translation_de=card.translation_de,
+        translation_mg=card.translation_mg,
+        example=card.example,
+        
         created_at=now,
         next_review=now + timedelta(days=1),  # Première révision demain
         box=0,
