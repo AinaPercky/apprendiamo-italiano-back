@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = 'add_quiz_adaptive'
-down_revision = '20251120_full_anki_and_scoring'
+down_revision = 'add_quiz_type'
 branch_labels = None
 depends_on = None
 

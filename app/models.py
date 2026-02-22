@@ -1,9 +1,17 @@
-from sqlalchemy import Column, ForeignKey, Integer, Text,Float, TIMESTAMP, String, inspect, Boolean, DateTime
+from sqlalchemy import Column, ForeignKey, Integer, Text,Float, TIMESTAMP, String, inspect, Boolean, DateTime, Table
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 from .database import Base
 import os
 from datetime import datetime
+
+# Table d'association Many-to-Many entre Decks et Cards
+deck_cards = Table(
+    'deck_cards',
+    Base.metadata,
+    Column('deck_pk', Integer, ForeignKey('decks.deck_pk', ondelete='CASCADE'), primary_key=True),
+    Column('card_pk', Integer, ForeignKey('cards.card_pk', ondelete='CASCADE'), primary_key=True)
+)
 
 class Deck(Base):
     __tablename__ = "decks"
@@ -14,7 +22,8 @@ class Deck(Base):
     total_correct = Column(Integer, default=0)
     total_attempts = Column(Integer, default=0)
 
-    cards = relationship("Card", back_populates="deck", cascade="all, delete-orphan")
+    # Relation Many-to-Many
+    cards = relationship("Card", secondary=deck_cards, back_populates="decks")
 
 
 class Card(Base):
@@ -22,7 +31,11 @@ class Card(Base):
 
     card_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
     id_json = Column(Text, unique=True, nullable=False)
-    deck_pk = Column(Integer, ForeignKey("decks.deck_pk", ondelete="CASCADE"), nullable=False)
+    
+    # deck_pk devient optionnel car la relation est gérée par deck_cards
+    # On le garde pour compatibilité temporaire
+    deck_pk = Column(Integer, ForeignKey("decks.deck_pk", ondelete="CASCADE"), nullable=True)
+    
     front = Column(Text, nullable=False)
     back = Column(Text, nullable=False)
     pronunciation = Column(Text, nullable=True)
@@ -52,7 +65,13 @@ class Card(Base):
     else:
         tags = Column(ARRAY(Text), nullable=False, server_default="{}")  # PostgreSQL
 
-    deck = relationship("Deck", back_populates="cards")
+    # Relation Many-to-Many
+    decks = relationship("Deck", secondary=deck_cards, back_populates="cards")
+    
+    # Ancienne relation (pour compatibilité, pointe vers le deck "principal" si deck_pk est rempli)
+    # Note: cela peut être source de confusion si le deck_pk n'est pas synchronisé avec deck_cards
+    # deck = relationship("Deck", back_populates="cards") # On commente ou retire car conflit avec 'decks' et 'cards'
+
 
 
 class User(Base):

@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'add_quiz_type'
-down_revision = None
+down_revision = '20251120_full_anki_and_scoring'
 branch_labels = None
 depends_on = None
 

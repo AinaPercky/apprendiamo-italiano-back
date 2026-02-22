@@ -68,17 +68,89 @@ def url_to_base64(url: str) -> Optional[str]:
 # ==================== CARTES – MISE À JOUR ANKI CRITIQUE ====================
 
 async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card:
+    # 1. Vérifier si la carte existe déjà (basé sur le mot italien 'back' GLOBALEMENT)
+    # L'utilisateur veut partager les cartes entre les decks (Many-to-Many)
+    stmt = select(models.Card).where(
+        models.Card.back.ilike(card.back)  # Recherche insensible à la casse
+    )
+    result = await db.execute(stmt)
+    existing_card = result.scalars().first()
+
+    if existing_card:
+        # === LOGIQUE D'ENRICHISSEMENT ET DE LIAISON (MANY-TO-MANY) ===
+        
+        # A. Lier la carte existante au nouveau deck si ce n'est pas déjà fait
+        # On vérifie si le lien existe déjà
+        stmt_link = select(models.deck_cards).where(
+            and_(
+                models.deck_cards.c.deck_pk == card.deck_pk,
+                models.deck_cards.c.card_pk == existing_card.card_pk
+            )
+        )
+        result_link = await db.execute(stmt_link)
+        link_exists = result_link.first()
+        
+        if not link_exists:
+            # Créer le lien Many-to-Many
+            await db.execute(
+                models.deck_cards.insert().values(
+                    deck_pk=card.deck_pk,
+                    card_pk=existing_card.card_pk
+                )
+            )
+            print(f"🔗 Carte existante (ID {existing_card.card_pk}) liée au deck {card.deck_pk}")
+
+        # B. Enrichissement des données (Upsert partiel)
+        changes = False
+        fields_to_check = [
+            'explanation_it', 'translation_en', 'translation_de', 
+            'translation_mg', 'example', 'pronunciation', 'image'
+        ]
+
+        for field in fields_to_check:
+            new_val = getattr(card, field)
+            current_val = getattr(existing_card, field)
+            
+            # Si une nouvelle valeur est fournie ET que la valeur actuelle est vide/nulle
+            if new_val and not current_val:
+                # Cas spécial pour l'image (conversion URL -> Base64)
+                if field == 'image' and new_val.startswith('http'):
+                    converted_image = url_to_base64(new_val)
+                    if converted_image:
+                        setattr(existing_card, field, converted_image)
+                        changes = True
+                else:
+                    setattr(existing_card, field, new_val)
+                    changes = True
+        
+        # Commit des changements (liaison + enrichissement)
+        await db.commit()
+        await db.refresh(existing_card)
+            
+        # Pour maintenir la compatibilité avec le frontend qui attend deck_pk sur l'objet retourné
+        # on l'injecte manuellement dans l'instance (ce n'est pas persisté dans cards.deck_pk si on veut être puriste,
+        # mais ici on peut le laisser si on garde la colonne pour compatibilité)
+        existing_card.deck_pk = card.deck_pk 
+        return existing_card
+
+    # 2. Création normale si la carte n'existe pas
     id_json = card.id_json or generate_id_json()
     now = datetime.utcnow()
+    
+    # Conversion image
+    image_val = url_to_base64(card.image) if card.image and card.image.startswith('http') else card.image
+
     db_card = models.Card(
         id_json=id_json,
-        deck_pk=card.deck_pk,
+        # deck_pk=card.deck_pk, # ON NE LE SET PAS DIRECTEMENT ICI SI ON VEUT ETRE FULL M2M
+        # Mais pour la compatibilité transitionnelle, on le met.
+        # Attention : si une carte a plusieurs decks, ce champ ne reflète que le "premier" ou "principal".
+        deck_pk=card.deck_pk, 
+        
         front=card.front,
         back=card.back,
         pronunciation=card.pronunciation,
-        # === NOUVEAU : Conversion de l'URL d'image en Base64 ===
-        image=url_to_base64(card.image) if card.image and card.image.startswith('http') else card.image,
-        # =======================================================
+        image=image_val,
         
         # Nouveaux champs optionnels
         explanation_it=card.explanation_it,
@@ -88,7 +160,7 @@ async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card
         example=card.example,
         
         created_at=now,
-        next_review=now + timedelta(days=1),  # Première révision demain
+        next_review=now + timedelta(days=1),
         box=0,
         tags=card.tags or [],
 
@@ -96,9 +168,20 @@ async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card
         easiness=2.5,
         interval=0,
         consecutive_correct=0,
-        last_reviewed_at=None,  # Jamais révisée
+        last_reviewed_at=None,
     )
+    
     db.add(db_card)
+    await db.flush() # Pour avoir l'ID
+    
+    # Créer le lien Many-to-Many
+    await db.execute(
+        models.deck_cards.insert().values(
+            deck_pk=card.deck_pk,
+            card_pk=db_card.card_pk
+        )
+    )
+    
     await db.commit()
     await db.refresh(db_card)
     return db_card
@@ -112,12 +195,16 @@ async def get_cards(
     search: Optional[str] = None,
     min_box: Optional[int] = None,
     tags_filter: Optional[List[str]] = None,
-    due_only: bool = False,  # ← NOUVEAU : pour le mode révision Anki
+    due_only: bool = False,
 ) -> List[models.Card]:
+    # On commence par sélectionner les cartes
     stmt = select(models.Card)
 
+    # JOINTURE IMPORTANTE : Si on filtre par deck, on passe par la table d'association
     if deck_pk:
-        stmt = stmt.where(models.Card.deck_pk == deck_pk)
+        stmt = stmt.join(models.deck_cards, models.Card.card_pk == models.deck_cards.c.card_pk)\
+                   .where(models.deck_cards.c.deck_pk == deck_pk)
+    
     if search:
         stmt = stmt.where(or_(
             models.Card.front.ilike(f"%{search}%"),
@@ -133,7 +220,16 @@ async def get_cards(
     stmt = stmt.offset(skip).limit(limit).order_by(models.Card.next_review)
 
     result = await db.execute(stmt)
-    return result.scalars().all()
+    cards = result.scalars().all()
+    
+    # Pour la compatibilité Frontend : Si on a filtré par un deck spécifique,
+    # on s'assure que l'attribut .deck_pk de chaque objet carte renvoyé correspond à ce deck.
+    # C'est une "vue" contextuelle de la carte.
+    if deck_pk:
+        for card in cards:
+            card.deck_pk = deck_pk
+            
+    return cards
 
 
 async def get_card(db: AsyncSession, card_pk: int) -> Optional[models.Card]:
@@ -172,8 +268,10 @@ async def delete_card(db: AsyncSession, card_pk: int) -> bool:
 
 async def get_due_cards(db: AsyncSession, user_pk: int, limit: int = 50) -> List[models.Card]:
     """Retourne les cartes à réviser aujourd'hui pour l'utilisateur (via user_decks)."""
+    # M2M Support: User -> UserDeck -> Deck -> deck_cards -> Card
     stmt = select(models.Card)\
-        .join(models.UserDeck, models.UserDeck.deck_pk == models.Card.deck_pk)\
+        .join(models.deck_cards, models.deck_cards.c.card_pk == models.Card.card_pk)\
+        .join(models.UserDeck, models.UserDeck.deck_pk == models.deck_cards.c.deck_pk)\
         .where(
             models.UserDeck.user_pk == user_pk,
             models.Card.next_review <= datetime.utcnow()
@@ -183,3 +281,115 @@ async def get_due_cards(db: AsyncSession, user_pk: int, limit: int = 50) -> List
 
     result = await db.execute(stmt)
     return result.scalars().all()
+
+
+# ==================== IMPORTATION EN LOT (UPSERT) ====================
+
+async def batch_upsert_cards(db: AsyncSession, cards: List[schemas.CardCreate]) -> dict:
+    """
+    Importe une liste de cartes avec logique Upsert (Mise à jour si existe, sinon Création).
+    - Basé sur le mot italien ('back') pour l'unicité.
+    - Met à jour les champs si une nouvelle valeur est fournie (écrasement).
+    - Assure le lien avec le deck spécifié.
+    """
+    results = {"created": 0, "updated": 0, "errors": 0}
+    
+    for card in cards:
+        try:
+            # 1. Vérifier si la carte existe déjà (basé sur le mot italien 'back')
+            stmt = select(models.Card).where(models.Card.back.ilike(card.back))
+            result = await db.execute(stmt)
+            existing_card = result.scalars().first()
+
+            if existing_card:
+                # === UPDATE LOGIC (Merge/Overwrite) ===
+                updated = False
+                fields_to_check = [
+                    'explanation_it', 'translation_en', 'translation_de', 
+                    'translation_mg', 'example', 'pronunciation', 'image',
+                    'front' # On met à jour le recto (français) aussi si changé
+                ]
+
+                for field in fields_to_check:
+                    new_val = getattr(card, field)
+                    # Si une nouvelle valeur est fournie (non vide/null)
+                    if new_val:
+                         # Gestion spéciale Image
+                        if field == 'image' and new_val.startswith('http'):
+                            converted = url_to_base64(new_val)
+                            if converted: new_val = converted
+                        
+                        # Comparaison et mise à jour
+                        if getattr(existing_card, field) != new_val:
+                            setattr(existing_card, field, new_val)
+                            updated = True
+                
+                # === M2M LINK CHECK ===
+                stmt_link = select(models.deck_cards).where(
+                    and_(
+                        models.deck_cards.c.deck_pk == card.deck_pk,
+                        models.deck_cards.c.card_pk == existing_card.card_pk
+                    )
+                )
+                link_exists = (await db.execute(stmt_link)).first()
+                
+                if not link_exists:
+                    await db.execute(
+                        models.deck_cards.insert().values(
+                            deck_pk=card.deck_pk,
+                            card_pk=existing_card.card_pk
+                        )
+                    )
+                    updated = True # On compte le lien comme une mise à jour
+                
+                if updated:
+                    results["updated"] += 1
+                    # On ajoute à la session pour être sûr que les modifs sont trackées
+                    db.add(existing_card)
+                    
+            else:
+                # === CREATE LOGIC ===
+                id_json = card.id_json or generate_id_json()
+                now = datetime.utcnow()
+                
+                image_val = url_to_base64(card.image) if card.image and card.image.startswith('http') else card.image
+
+                db_card = models.Card(
+                    id_json=id_json,
+                    deck_pk=card.deck_pk,
+                    front=card.front,
+                    back=card.back,
+                    pronunciation=card.pronunciation,
+                    image=image_val,
+                    explanation_it=card.explanation_it,
+                    translation_en=card.translation_en,
+                    translation_de=card.translation_de,
+                    translation_mg=card.translation_mg,
+                    example=card.example,
+                    created_at=now,
+                    next_review=now + timedelta(days=1),
+                    box=0,
+                    tags=card.tags or [],
+                    easiness=2.5,
+                    interval=0,
+                    consecutive_correct=0,
+                    last_reviewed_at=None,
+                )
+                db.add(db_card)
+                await db.flush() # Pour avoir l'ID
+                
+                # Création du lien
+                await db.execute(
+                    models.deck_cards.insert().values(
+                        deck_pk=card.deck_pk,
+                        card_pk=db_card.card_pk
+                    )
+                )
+                results["created"] += 1
+
+        except Exception as e:
+            print(f"Error processing card {card.back}: {e}")
+            results["errors"] += 1
+
+    await db.commit()
+    return results

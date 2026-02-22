@@ -35,6 +35,16 @@ async def delete_deck(deck_pk: int, db: AsyncSession = Depends(get_db)):
     return {"detail": "Deck deleted"}
 
 # === CARTES – IMPORTANT : on expose maintenant les champs Anki ===
+@router.post("/cards/batch_import")
+async def batch_import_cards(cards: List[schemas.CardCreate], db: AsyncSession = Depends(get_db)):
+    """
+    Importe une liste de cartes en mode Upsert (Mise à jour ou Création).
+    - Met à jour les cartes existantes (basé sur le mot italien 'back').
+    - Crée les nouvelles cartes.
+    - Gère les liens Many-to-Many avec les decks.
+    """
+    return await crud_cards.batch_upsert_cards(db, cards)
+
 @router.post("/cards/", response_model=schemas.Card)
 async def create_card(card: schemas.CardCreate, db: AsyncSession = Depends(get_db)):
     return await crud_cards.create_card(db, card)
