@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import base64
 import requests
 from requests.exceptions import RequestException
+from .core.image_scraper import fetch_icon_url # Import du scraper
 
 def generate_id_json() -> str:
     return str(uuid.uuid4()).replace('-', '')[:7]
@@ -300,6 +301,19 @@ async def batch_upsert_cards(db: AsyncSession, cards: List[schemas.CardCreate]) 
             stmt = select(models.Card).where(models.Card.back.ilike(card.back))
             result = await db.execute(stmt)
             existing_card = result.scalars().first()
+
+            # === AUTO-IMAGE LOGIC ===
+            # Si aucune image fournie, on essaie de la trouver via scraping
+            if not card.image:
+                search_query = card.translation_en or card.front
+                print(f"🖼️ Auto-fetching icon for '{search_query}'...")
+                scraped_url = fetch_icon_url(search_query)
+                if scraped_url:
+                    print(f"   ✅ Found: {scraped_url[:50]}...")
+                    # On met l'URL dans card.image pour qu'elle soit traitée (convertie en Base64) plus bas
+                    card.image = scraped_url
+                else:
+                    print("   ❌ No icon found.")
 
             if existing_card:
                 # === UPDATE LOGIC (Merge/Overwrite) ===

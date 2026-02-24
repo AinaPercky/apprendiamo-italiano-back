@@ -12,6 +12,7 @@ Ce document décrit comment intégrer la nouvelle fonctionnalité d'importation 
 *   **Performance** : Une seule requête HTTP au lieu de centaines (N+1).
 *   **Intelligence** : Détecte automatiquement les doublons basés sur le mot italien (`back`).
 *   **Mise à jour (Upsert)** : Si une carte existe déjà, elle est mise à jour avec les nouvelles informations (ex: ajout d'une traduction allemande manquante) sans créer de doublon.
+*   **Auto-Icon** : Si l'image est manquante, le système cherche automatiquement une icône (Flaticon/Google) basée sur la traduction anglaise (`translation_en`) ou le recto (`front`).
 *   **Multi-Deck** : Si la carte existe dans un autre deck, elle est liée au deck actuel sans être dupliquée.
 
 ---
