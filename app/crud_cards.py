@@ -304,7 +304,8 @@ async def batch_upsert_cards(db: AsyncSession, cards: List[schemas.CardCreate]) 
 
             # === AUTO-IMAGE LOGIC ===
             # Si aucune image fournie, on essaie de la trouver via scraping
-            if not card.image:
+            # IMPORTANT: Ne pas remplacer une image déjà existante sur une carte existante
+            if not card.image and (not existing_card or not existing_card.image):
                 search_query = card.translation_en or card.front
                 print(f"🖼️ Auto-fetching icon for '{search_query}'...")
                 scraped_url = fetch_icon_url(search_query)
@@ -320,7 +321,7 @@ async def batch_upsert_cards(db: AsyncSession, cards: List[schemas.CardCreate]) 
                 updated = False
                 fields_to_check = [
                     'explanation_it', 'translation_en', 'translation_de', 
-                    'translation_mg', 'example', 'pronunciation', 'image',
+                    'translation_mg', 'example', 'pronunciation',
                     'front' # On met à jour le recto (français) aussi si changé
                 ]
 
@@ -329,14 +330,19 @@ async def batch_upsert_cards(db: AsyncSession, cards: List[schemas.CardCreate]) 
                     # Si une nouvelle valeur est fournie (non vide/null)
                     if new_val:
                          # Gestion spéciale Image
-                        if field == 'image' and new_val.startswith('http'):
-                            converted = url_to_base64(new_val)
-                            if converted: new_val = converted
-                        
+                        # (image est traitée séparément ci-dessous)
                         # Comparaison et mise à jour
                         if getattr(existing_card, field) != new_val:
                             setattr(existing_card, field, new_val)
                             updated = True
+                
+                # === IMAGE: ne pas écraser si déjà présente ===
+                if card.image:
+                    # Convertir si nécessaire
+                    image_val = url_to_base64(card.image) if card.image.startswith('http') else card.image
+                    if not existing_card.image and image_val and existing_card.image != image_val:
+                        existing_card.image = image_val
+                        updated = True
                 
                 # === M2M LINK CHECK ===
                 stmt_link = select(models.deck_cards).where(

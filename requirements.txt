@@ -17,3 +17,6 @@ google-auth
 google-auth-oauthlib
 google-auth-httplib2
 alembic
+ beautifulsoup4
+ duckduckgo_search
+ lxml
