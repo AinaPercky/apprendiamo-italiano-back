@@ -19,8 +19,14 @@ from app.models import Base  # ← maintenant ça trouve 'app'
 # this is the Alembic Config object
 config = context.config
 db_url = os.getenv("DATABASE_URL")
+def _normalize_db_url(url: str) -> str:
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    if url.startswith("postgresql://") and "+asyncpg" not in url:
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
 if db_url:
-    config.set_main_option("sqlalchemy.url", db_url)
+    config.set_main_option("sqlalchemy.url", _normalize_db_url(db_url))
 
 # Force UTF-8 pour le ini (même si on l’a simplifié)
 if config.config_file_name is not None:
