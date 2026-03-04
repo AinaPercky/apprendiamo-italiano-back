@@ -11,12 +11,16 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
+import os
 
 # Maintenant l'import marche
 from app.models import Base  # ← maintenant ça trouve 'app'
 
 # this is the Alembic Config object
 config = context.config
+db_url = os.getenv("DATABASE_URL")
+if db_url:
+    config.set_main_option("sqlalchemy.url", db_url)
 
 # Force UTF-8 pour le ini (même si on l’a simplifié)
 if config.config_file_name is not None:

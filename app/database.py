@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -9,14 +10,12 @@ import databases
 
 logger = logging.getLogger(__name__)
 
-# URL de connexion unifiée (à adapter selon l'environnement de déploiement)
-# Utilisation des paramètres du projet audio car il est asynchrone
-DATABASE_URL = "postgresql+asyncpg://postgres:admin@localhost:5432/apprendiamo_db"
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:admin@localhost:5432/apprendiamo_db")
 database = databases.Database(DATABASE_URL)
 
 engine = create_async_engine(
     DATABASE_URL,
-    echo=True,
+    echo=os.getenv("SQL_ECHO", "0") == "1",
     pool_pre_ping=True
 )
 
