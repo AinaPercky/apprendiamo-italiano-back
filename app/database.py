@@ -9,9 +9,11 @@ import databases
 
 logger = logging.getLogger(__name__)
 
+import os
+
 # URL de connexion unifiée (à adapter selon l'environnement de déploiement)
 # Utilisation des paramètres du projet audio car il est asynchrone
-DATABASE_URL = "postgresql+asyncpg://postgres:admin@localhost:5432/apprendiamo_db"
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:admin@localhost:5432/apprendiamo_db")
 database = databases.Database(DATABASE_URL)
 
 engine = create_async_engine(
