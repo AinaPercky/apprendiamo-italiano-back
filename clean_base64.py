@@ -1,14 +1,13 @@
 import re
 
-INPUT = "backup_local_plain.sql"
-OUTPUT = "backup_clean.sql"
+INPUT = "backup_inserts.sql"
+OUTPUT = "backup_inserts_clean.sql"
 
-BASE64_PATTERN = re.compile(r'data:[a-zA-Z0-9/+.\-]+;base64,[A-Za-z0-9+/=\r\n]+')
-NULL_REPLACEMENT = r'\N'
+# Dans le format --inserts, les valeurs base64 sont entre quotes SQL: 'data:...;base64,...'
+BASE64_PATTERN = re.compile(r"'data:[^']{0,50};base64,[^']*'")
 
 count = 0
 lines_processed = 0
-in_copy_block = False
 
 print("Nettoyage de " + INPUT + "...")
 
@@ -16,16 +15,11 @@ with open(INPUT, 'r', encoding='utf-8', errors='replace') as fin, \
      open(OUTPUT, 'w', encoding='utf-8') as fout:
     for line in fin:
         lines_processed += 1
-        if lines_processed % 5000 == 0:
+        if lines_processed % 10000 == 0:
             print("  " + str(lines_processed) + " lignes, " + str(count) + " remplacements...")
 
-        if line.startswith('COPY '):
-            in_copy_block = True
-        elif line.strip() == '\\.':
-            in_copy_block = False
-
-        if in_copy_block and 'base64,' in line:
-            new_line, n = BASE64_PATTERN.subn(lambda m: r'\N', line)
+        if 'base64,' in line:
+            new_line, n = BASE64_PATTERN.subn(lambda m: "NULL", line)
             count += n
             fout.write(new_line)
         else:
@@ -33,5 +27,8 @@ with open(INPUT, 'r', encoding='utf-8', errors='replace') as fin, \
 
 print("Done!")
 print("  Lignes: " + str(lines_processed))
-print("  Images remplacees: " + str(count))
-print("  Fichier: " + OUTPUT)
+print("  Images remplacees par NULL: " + str(count))
+size_mb = 0
+import os
+size_mb = os.path.getsize(OUTPUT) / 1024 / 1024
+print("  Fichier: " + OUTPUT + " (" + str(round(size_mb, 1)) + " Mo)")
