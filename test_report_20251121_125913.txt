@@ -1,0 +1,82 @@
+
+================================================================================
+                    RAPPORT DE TESTS AUTOMATIQUES
+================================================================================
+Date: 2025-11-21 12:59:11
+Durée totale: 2.17s
+
+RÉSUMÉ:
+--------
+Total de tests: 19
+✅ Réussis: 19
+❌ Échoués: 0
+⚠️ Avertissements: 0
+⏭️ Ignorés: 0
+
+Taux de réussite: 100.0%
+
+================================================================================
+DÉTAILS DES TESTS:
+================================================================================
+
+1. ✅ SUCCESS - Création d'utilisateur (0.666s)
+   📝 Utilisateur créé: test_1763719151.269855@example.com
+
+2. ✅ SUCCESS - Connexion utilisateur (0.580s)
+   📝 Connexion réussie pour login_1763719152.304407@example.com
+
+3. ✅ SUCCESS - Création d'un deck (0.020s)
+   📝 Deck créé avec ID: 53
+
+4. ✅ SUCCESS - Récupération de la liste des decks (0.102s)
+   📝 Nombre de decks récupérés: 10
+
+5. ✅ SUCCESS - Récupération d'un deck par ID (0.013s)
+   📝 Deck récupéré: Test Deck 1763719152.885365
+
+6. ✅ SUCCESS - Création de cartes (0.058s)
+   📝 3 cartes créées avec succès
+
+7. ✅ SUCCESS - Récupération de toutes les cartes (0.012s)
+   📝 Nombre de cartes récupérées: 10
+
+8. ✅ SUCCESS - Récupération des cartes d'un deck (0.010s)
+   📝 Cartes du deck 53: 3
+
+9. ✅ SUCCESS - Mise à jour d'une carte (0.016s)
+   📝 Carte 1014 mise à jour
+
+10. ✅ SUCCESS - Ajout d'un deck à l'utilisateur (0.043s)
+   📝 Deck 53 ajouté à l'utilisateur
+
+11. ✅ SUCCESS - Récupération des decks utilisateur (0.014s)
+   📝 Nombre de decks utilisateur: 1
+
+12. ✅ SUCCESS - Quiz type 'frappe' (0.046s)
+   📝 Score frappe enregistré: 85/100
+
+13. ✅ SUCCESS - Quiz type 'association' (0.039s)
+   📝 Score association enregistré: 100/100
+
+14. ✅ SUCCESS - Quiz type 'QCM' (0.043s)
+   📝 Score QCM enregistré: 75/100
+
+15. ✅ SUCCESS - Quiz type 'classique' (0.044s)
+   📝 Score classique enregistré: 90/100
+
+16. ✅ SUCCESS - Quiz avec réponse incorrecte (0.034s)
+   📝 Réponse incorrecte enregistrée: 30/100
+
+17. ✅ SUCCESS - Vérification algorithme Anki (0.007s)
+   📝 Algorithme Anki actif: easiness modifié: 2.6, interval modifié: 6, consecutive_correct: 2
+
+18. ✅ SUCCESS - Vérification statistiques deck utilisateur (0.012s)
+   📝 Stats correctes: total_attempts: 5, total_points: 380, points_frappe: 85, points_association: 100, points_qcm: 75, points_classique: 120
+
+19. ✅ SUCCESS - Suppression des cartes de test (0.027s)
+   📝 3 cartes supprimées
+
+================================================================================
+✨ Aucun bug identifié!
+
+================================================================================

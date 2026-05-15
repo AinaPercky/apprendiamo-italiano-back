@@ -1,9 +1,17 @@
-from sqlalchemy import Column, ForeignKey, Integer, Text,Float, TIMESTAMP, String, inspect, Boolean, DateTime
+from sqlalchemy import Column, ForeignKey, Integer, Text,Float, TIMESTAMP, String, inspect, Boolean, DateTime, Table
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 from .database import Base
 import os
 from datetime import datetime
+
+# Table d'association Many-to-Many entre Decks et Cards
+deck_cards = Table(
+    'deck_cards',
+    Base.metadata,
+    Column('deck_pk', Integer, ForeignKey('decks.deck_pk', ondelete='CASCADE'), primary_key=True),
+    Column('card_pk', Integer, ForeignKey('cards.card_pk', ondelete='CASCADE'), primary_key=True)
+)
 
 class Deck(Base):
     __tablename__ = "decks"
@@ -14,7 +22,8 @@ class Deck(Base):
     total_correct = Column(Integer, default=0)
     total_attempts = Column(Integer, default=0)
 
-    cards = relationship("Card", back_populates="deck", cascade="all, delete-orphan")
+    # Relation Many-to-Many
+    cards = relationship("Card", secondary=deck_cards, back_populates="decks")
 
 
 class Card(Base):
@@ -22,7 +31,11 @@ class Card(Base):
 
     card_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
     id_json = Column(Text, unique=True, nullable=False)
-    deck_pk = Column(Integer, ForeignKey("decks.deck_pk", ondelete="CASCADE"), nullable=False)
+    
+    # deck_pk devient optionnel car la relation est gérée par deck_cards
+    # On le garde pour compatibilité temporaire
+    deck_pk = Column(Integer, ForeignKey("decks.deck_pk", ondelete="CASCADE"), nullable=True)
+    
     front = Column(Text, nullable=False)
     back = Column(Text, nullable=False)
     pronunciation = Column(Text, nullable=True)
@@ -30,6 +43,14 @@ class Card(Base):
     created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     next_review = Column(TIMESTAMP(timezone=True), nullable=False)
     box = Column(Integer, default=0)
+    
+    # === NOUVEAUX CHAMPS (2026-02-11) ===
+    explanation_it = Column(Text, nullable=True)
+    translation_en = Column(Text, nullable=True)
+    translation_de = Column(Text, nullable=True)
+    translation_mg = Column(Text, nullable=True)
+    example = Column(Text, nullable=True)
+    
     # === NOUVEAU : Algorithme Anki ===
     easiness = Column(Float, nullable=False, default=2.5)
     interval = Column(Integer, nullable=False, default=0)
@@ -44,7 +65,13 @@ class Card(Base):
     else:
         tags = Column(ARRAY(Text), nullable=False, server_default="{}")  # PostgreSQL
 
-    deck = relationship("Deck", back_populates="cards")
+    # Relation Many-to-Many
+    decks = relationship("Deck", secondary=deck_cards, back_populates="cards")
+    
+    # Ancienne relation (pour compatibilité, pointe vers le deck "principal" si deck_pk est rempli)
+    # Note: cela peut être source de confusion si le deck_pk n'est pas synchronisé avec deck_cards
+    # deck = relationship("Deck", back_populates="cards") # On commente ou retire car conflit avec 'decks' et 'cards'
+
 
 
 class User(Base):
@@ -183,3 +210,62 @@ class AudioItem(Base):
     category = Column(String, index=True, nullable=False)
     language = Column(String, default='it')
     ipa = Column(String, nullable=True)
+
+
+class CardPerformance(Base):
+    """Suivi des performances utilisateur par carte pour l'algorithme de sélection intelligente"""
+    __tablename__ = "card_performance"
+
+    performance_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    user_pk = Column(Integer, ForeignKey("users.user_pk", ondelete="CASCADE"), nullable=False, index=True)
+    card_pk = Column(Integer, ForeignKey("cards.card_pk", ondelete="CASCADE"), nullable=False, index=True)
+    deck_pk = Column(Integer, ForeignKey("decks.deck_pk", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Statistiques de performance
+    correct_count = Column(Integer, default=0, nullable=False)
+    incorrect_count = Column(Integer, default=0, nullable=False)
+    total_attempts = Column(Integer, default=0, nullable=False)
+    
+    # Score pour la priorisation : (incorrect_count * 2) - correct_count
+    # Plus le score est élevé, plus la carte doit être révisée
+    priority_score = Column(Float, default=0.0, nullable=False)
+    
+    # Timestamps
+    last_reviewed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relations
+    user = relationship("User")
+    card = relationship("Card")
+    deck = relationship("Deck")
+
+
+class QuizSession(Base):
+    """Historique des sessions de quiz pour éviter les répétitions jusqu'à ce que toutes les cartes soient vues"""
+    __tablename__ = "quiz_sessions"
+
+    session_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    user_pk = Column(Integer, ForeignKey("users.user_pk", ondelete="CASCADE"), nullable=False, index=True)
+    deck_pk = Column(Integer, ForeignKey("decks.deck_pk", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Configuration du quiz
+    card_count = Column(Integer, nullable=False)  # Nombre de cartes dans ce quiz
+    quiz_type = Column(String, nullable=False, default="classique")
+    
+    # État du cycle
+    cycle_number = Column(Integer, default=1, nullable=False)  # Quel cycle de révision (1, 2, 3...)
+    
+    # Cartes utilisées (stockées en JSON array d'IDs)
+    used_card_pks = Column(Text, nullable=False)  # JSON array: [1, 5, 12, ...]
+    
+    # Résultats
+    correct_count = Column(Integer, default=0)
+    total_questions = Column(Integer, default=0)
+    
+    # Timestamps
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    
+    # Relations
+    user = relationship("User")
+    deck = relationship("Deck")

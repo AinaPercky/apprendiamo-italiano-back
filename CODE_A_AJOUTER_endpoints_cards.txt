@@ -1,0 +1,23 @@
+# CODE À AJOUTER MANUELLEMENT DANS endpoints_cards.py
+
+# Ajouter après la ligne 28 (après l'endpoint read_deck) :
+
+@router.delete("/decks/{deck_pk}")
+async def delete_deck(deck_pk: int, db: AsyncSession = Depends(get_db)):
+    """
+    Supprime complètement un deck du système.
+    
+    ⚠️ ATTENTION : Cette opération est irréversible et supprime :
+    - Le deck
+    - Toutes ses cartes
+    - Toutes les associations utilisateur-deck
+    - Tous les scores liés
+    
+    Utilisez DELETE /api/users/decks/{deck_pk} pour retirer un deck de votre collection sans le supprimer.
+    """
+    from .. import crud_decks
+    
+    deleted = await crud_decks.delete_deck(db, deck_pk)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    return {"message": "Deck deleted permanently"}

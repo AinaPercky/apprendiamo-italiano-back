@@ -1,0 +1,7 @@
+BUGS IDENTIFIÉS
+================================================================================
+
+1. Connexion utilisateur: Endpoint /api/users/login non trouvé dans le code
+2. Mise à jour d'une carte: Status 500: Internal Server Error
+3. Ajout d'un deck à l'utilisateur: 
+4. Vérification statistiques deck utilisateur: Deck de test non trouvé dans les decks utilisateur

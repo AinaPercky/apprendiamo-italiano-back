@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 from . import models, schemas
@@ -294,31 +294,46 @@ async def create_score(
                     )
                 )
                 user_deck = ud_result.scalar_one_or_none()
-                if user_deck:
-                    user_deck.total_attempts += 1
-                    user_deck.total_points += score_data.score
-                    if score_data.is_correct:
-                        user_deck.successful_attempts += 1
-                    
-                    # Stats par type
-                    if score_data.quiz_type == "frappe":
-                        user_deck.points_frappe += score_data.score
-                    elif score_data.quiz_type == "association":
-                        user_deck.points_association += score_data.score
-                    elif score_data.quiz_type == "qcm":
-                        user_deck.points_qcm += score_data.score
-                    elif score_data.quiz_type == "classique":
-                        user_deck.points_classique += score_data.score
-                        
-                    # Stats de progression (simplifié)
-                    if grade >= 3:
-                        user_deck.mastered_cards += 1
-                    elif grade >= 1:
-                        user_deck.learning_cards += 1
-                    else:
-                        user_deck.review_cards += 1
-                        
+                
+                # Si le UserDeck n'existe pas, le créer (cas du premier quiz)
+                if not user_deck:
+                    user_deck = models.UserDeck(
+                        user_pk=user_pk,
+                        deck_pk=score_data.deck_pk,
+                    )
                     db.add(user_deck)
+                    # Flush pour que SQLAlchemy initialise les valeurs par défaut
+                    await db.flush()
+                    # Rafraîchir l'objet pour obtenir les valeurs par défaut de la DB
+                    await db.refresh(user_deck)
+                
+                # Mise à jour des statistiques du UserDeck
+                user_deck.total_attempts += 1
+                user_deck.total_points += score_data.score
+                if score_data.is_correct:
+                    user_deck.successful_attempts += 1
+                
+                # Stats par type
+                if score_data.quiz_type == "frappe":
+                    user_deck.points_frappe += score_data.score
+                elif score_data.quiz_type == "association":
+                    user_deck.points_association += score_data.score
+                elif score_data.quiz_type == "qcm":
+                    user_deck.points_qcm += score_data.score
+                elif score_data.quiz_type == "classique":
+                    user_deck.points_classique += score_data.score
+                    
+                # Mise à jour des compteurs de cartes maîtrisées/en cours/à revoir
+                await update_user_deck_anki_stats(db, user_deck)
+                
+                # Mise à jour des statistiques globales du Deck (total_correct, total_attempts)
+                deck_result = await db.execute(select(models.Deck).where(models.Deck.deck_pk == score_data.deck_pk))
+                deck = deck_result.scalar_one_or_none()
+                if deck:
+                    deck.total_attempts += 1
+                    if score_data.is_correct:
+                        deck.total_correct += 1
+                    db.add(deck)
     
     await db.commit()
     await db.refresh(db_score)
@@ -345,7 +360,9 @@ async def get_user_scores(
 async def get_user_deck_scores(
     db: AsyncSession,
     user_pk: int,
-    deck_pk: int
+    deck_pk: int,
+    limit: int = 100,
+    offset: int = 0
 ) -> list[models.UserScore]:
     """Récupère les scores d'un utilisateur pour un deck spécifique."""
     result = await db.execute(
@@ -355,6 +372,8 @@ async def get_user_deck_scores(
             (models.UserScore.deck_pk == deck_pk)
         )
         .order_by(models.UserScore.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     return result.scalars().all()
 
@@ -461,18 +480,241 @@ async def add_user_deck(
     return result.unique().scalar_one()
 
 
+async def update_user_deck_anki_stats(
+    db: AsyncSession,
+    user_deck: models.UserDeck,
+    commit_changes: bool = False
+) -> models.UserDeck:
+    """Met à jour les compteurs de cartes maîtrisées/en cours/à revoir pour un UserDeck."""
+    
+    # 1. Compter le nombre total de cartes dans le deck (Shared)
+    stmt_total = select(func.count(models.Card.card_pk)).where(models.Card.deck_pk == user_deck.deck_pk)
+    result_total = await db.execute(stmt_total)
+    total_cards = result_total.scalar() or 0
+    
+    # 2. Récupérer les performances de l'utilisateur pour ce deck
+    stmt_perf = select(models.CardPerformance).where(
+        (models.CardPerformance.user_pk == user_deck.user_pk) &
+        (models.CardPerformance.deck_pk == user_deck.deck_pk)
+    )
+    result_perf = await db.execute(stmt_perf)
+    performances = result_perf.scalars().all()
+    
+    # 3. Initialiser les compteurs
+    mastered_cards = 0
+    review_cards = 0
+    
+    # Set des cartes ayant une performance (pour déduire celles qui n'en ont pas)
+    seen_cards_count = 0
+    
+    for perf in performances:
+        if perf.total_attempts > 0:
+            seen_cards_count += 1
+            # Logique alignée avec schemas.py (Label)
+            
+            # Maîtrisée : Dernière réponse correcte (consecutive_correct provient d'un join normalement, 
+            # mais ici on doit déduire ou charger.
+            # ATTENTION : CardPerformance contient les stats, mais consecutive_correct est sur Card pour Anki.
+            # MAIS Card est partagé. 
+            # D'après les dernières modifications, on veut que le statut suive la performance perso.
+            # On va utiliser une logique simplifiée basée sur CardPerformance car on ne veut pas join Card pour chaque perf dans une boucle.
+            
+            # Logique stricte :
+            # Maîtrisée = correct_count > 0 ET dernière réponse PAS incorrecte?
+            # Sans timestamp précis par réponse, difficile de savoir "dernière".
+            # Cependant, schemas.py utilise consecutive_correct de la CARTE.
+            # Si on veut aligner TOTALEMENT, on devrait join Cards.
+            pass
+
+    # RE-STRATÉGIE : Faire une requête aggrégée ou join
+    # On va join CardPerformance et Card pour avoir les données exactes
+    # Cependant, Card.consecutive_correct est GLOBAL. Si on l'utilise pour UserStats, on a le problème original.
+    # Pour l'instant, schemas.py utilise Card.consecutive_correct.
+    # SI Card.consecutive_correct est utilisé pour déterminer "Maîtrisée", alors on DOIT l'utiliser ici.
+    
+    stmt_join = select(models.CardPerformance, models.Card).join(
+        models.Card, models.CardPerformance.card_pk == models.Card.card_pk
+    ).where(
+        (models.CardPerformance.user_pk == user_deck.user_pk) &
+        (models.CardPerformance.deck_pk == user_deck.deck_pk)
+    )
+    result_join = await db.execute(stmt_join)
+    rows = result_join.all() # [(CardPerformance, Card), ...]
+    
+    mastered_cards = 0
+    review_cards = 0
+    
+    processed_card_pks = set()
+    
+    for perf, card in rows:
+        processed_card_pks.add(perf.card_pk)
+        
+        # Logique Label (schemas.py)
+        # En cours: attempts == 0 (exclus par la requête perf w/ attempts>0 si on filtre, mais ici on prend tout)
+        if perf.total_attempts == 0:
+            continue # Est "En cours"
+            
+        # Maîtrisée: consecutive_correct > 0
+        if card.consecutive_correct > 0:
+            mastered_cards += 1
+        else:
+            # Non maîtrisée (consecutive_correct == 0, attempts > 0) -> Review
+            review_cards += 1
+            
+    # Learning (En cours) = Total - (Mastered + Review)
+    # Cela couvre :
+    # 1. Les cartes sans enregistrement CardPerformance
+    # 2. Les cartes avec CardPerformance mais attempts == 0
+    learning_cards = max(0, total_cards - mastered_cards - review_cards)
+            
+    # 4. Mettre à jour le UserDeck
+    user_deck.mastered_cards = mastered_cards
+    user_deck.learning_cards = learning_cards
+    user_deck.review_cards = review_cards
+    
+    db.add(user_deck)
+    
+    # Commit conditionnel
+    if commit_changes:
+        await db.commit()
+        await db.refresh(user_deck)
+    
+    return user_deck
+
+
 async def get_user_decks(
     db: AsyncSession,
     user_pk: int
 ) -> list[models.UserDeck]:
-    """Récupère tous les decks d'un utilisateur."""
+    """Récupère tous les decks de l'utilisateur avec les stats Anki à jour."""
     result = await db.execute(
         select(models.UserDeck)
         .options(joinedload(models.UserDeck.deck))
         .where(models.UserDeck.user_pk == user_pk)
         .order_by(models.UserDeck.added_at.desc())
     )
-    return result.unique().scalars().all()
+    user_decks = result.unique().scalars().all()
+    
+    # Mettre à jour les stats Anki pour chaque deck
+    for user_deck in user_decks:
+        await update_user_deck_anki_stats(db, user_deck)
+        
+    return user_decks
+
+
+async def get_all_decks_with_user_stats(
+    db: AsyncSession,
+    user_pk: int
+) -> list[models.UserDeck]:
+    """
+    Récupère TOUS les decks du système avec les stats personnalisées de l'utilisateur.
+    Pour les decks que l'utilisateur n'a pas encore commencés, retourne des stats à 0.
+    """
+    # 1. Récupérer tous les decks du système
+    all_decks_result = await db.execute(
+        select(models.Deck).order_by(models.Deck.name)
+    )
+    all_decks = all_decks_result.scalars().all()
+    
+    # 2. Récupérer les user_decks existants pour cet utilisateur
+    user_decks_result = await db.execute(
+        select(models.UserDeck)
+        .options(joinedload(models.UserDeck.deck))
+        .where(models.UserDeck.user_pk == user_pk)
+    )
+    user_decks_dict = {
+        ud.deck_pk: ud 
+        for ud in user_decks_result.unique().scalars().all()
+    }
+    
+    # 3. Créer une liste de UserDeck pour tous les decks
+    result_list = []
+    
+    for deck in all_decks:
+        if deck.deck_pk in user_decks_dict:
+            # L'utilisateur a déjà commencé ce deck
+            user_deck = user_decks_dict[deck.deck_pk]
+            await update_user_deck_anki_stats(db, user_deck)
+            result_list.append(user_deck)
+        else:
+            # L'utilisateur n'a pas encore commencé ce deck
+            # Créer un objet UserDeck temporaire avec des stats à 0
+            temp_user_deck = models.UserDeck(
+                user_deck_pk=0,  # Temporaire, non sauvegardé en DB
+                user_pk=user_pk,
+                deck_pk=deck.deck_pk,
+                deck=deck,
+                added_at=datetime.utcnow(),
+                last_studied=None,
+                total_points=0,
+                total_attempts=0,
+                successful_attempts=0,
+                points_frappe=0,
+                points_association=0,
+                points_qcm=0,
+                points_classique=0,
+                mastered_cards=0,
+                learning_cards=0,
+                review_cards=0
+            )
+            result_list.append(temp_user_deck)
+    
+    return result_list
+
+
+async def get_user_deck_stats(
+    db: AsyncSession,
+    user_pk: int,
+    deck_pk: int
+) -> models.UserDeck:
+    """
+    Récupère les statistiques d'un deck spécifique pour l'utilisateur.
+    Gère le cas où le deck n'a pas encore été commencé (retourne des stats à 0).
+    """
+    # 1. Vérifier si un UserDeck existe
+    result = await db.execute(
+        select(models.UserDeck)
+        .options(joinedload(models.UserDeck.deck))
+        .where(
+            (models.UserDeck.user_pk == user_pk) & 
+            (models.UserDeck.deck_pk == deck_pk)
+        )
+    )
+    user_deck = result.unique().scalar_one_or_none()
+
+    if user_deck:
+        # Mettre à jour les stats Anki avant de retourner
+        await update_user_deck_anki_stats(db, user_deck)
+        return user_deck
+
+    # 2. Si non, récupérer le deck de base
+    deck_result = await db.execute(
+        select(models.Deck).where(models.Deck.deck_pk == deck_pk)
+    )
+    deck = deck_result.scalar_one_or_none()
+
+    if not deck:
+        raise ValueError("Deck not found")
+
+    # 3. Créer un objet UserDeck temporaire (stats à 0)
+    return models.UserDeck(
+        user_deck_pk=0,
+        user_pk=user_pk,
+        deck_pk=deck_pk,
+        deck=deck,
+        added_at=datetime.utcnow(),
+        last_studied=None,
+        total_points=0,
+        total_attempts=0,
+        successful_attempts=0,
+        points_frappe=0,
+        points_association=0,
+        points_qcm=0,
+        points_classique=0,
+        mastered_cards=0,
+        learning_cards=0,
+        review_cards=0
+    )
 
 
 async def remove_user_deck(
@@ -480,7 +722,13 @@ async def remove_user_deck(
     user_pk: int,
     deck_pk: int
 ) -> bool:
-    """Supprime un deck de la collection d'un utilisateur."""
+    """
+    Supprime un deck de la collection d'un utilisateur.
+    
+    Retourne True même si le deck n'existe pas dans la collection,
+    car le résultat final est le même : le deck n'est pas dans la collection.
+    Cela permet de "supprimer" des decks système que l'utilisateur n'a jamais commencés.
+    """
     result = await db.execute(
         select(models.UserDeck).where(
             (models.UserDeck.user_pk == user_pk) &
@@ -489,11 +737,11 @@ async def remove_user_deck(
     )
     user_deck = result.scalars().first()
     
-    if not user_deck:
-        return False
+    if user_deck:
+        await db.delete(user_deck)
+        await db.commit()
     
-    await db.delete(user_deck)
-    await db.commit()
+    # Retourne toujours True car le résultat final est atteint
     return True
 
 

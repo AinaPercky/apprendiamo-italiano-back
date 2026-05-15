@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -9,14 +10,19 @@ import databases
 
 logger = logging.getLogger(__name__)
 
-# URL de connexion unifiée (à adapter selon l'environnement de déploiement)
-# Utilisation des paramètres du projet audio car il est asynchrone
-DATABASE_URL = "postgresql+asyncpg://postgres:admin@localhost:5432/apprendiamo_db"
+def _normalize_db_url(url: str) -> str:
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    if url.startswith("postgresql://") and "+asyncpg" not in url:
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+DATABASE_URL = _normalize_db_url(os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:admin@localhost:5432/apprendiamo_db"))
 database = databases.Database(DATABASE_URL)
 
 engine = create_async_engine(
     DATABASE_URL,
-    echo=True,
+    echo=os.getenv("SQL_ECHO", "0") == "1",
     pool_pre_ping=True
 )
 
@@ -31,28 +37,25 @@ Base = declarative_base()
 
 async def init_db():
     """Initialise la base de données et crée les tables."""
-    max_retries = 10
-    retry_delay = 3
-    for attempt in range(max_retries):
+    max_retries = int(os.getenv("DB_MAX_RETRIES", "15"))
+    retry_delay = int(os.getenv("DB_RETRY_DELAY", "2"))
+    last_error = None
+    for attempt in range(1, max_retries + 1):
         try:
-            # Vérification de la connexion
             async with engine.connect() as conn:
                 result = await conn.execute(text("SELECT 1"))
                 logger.info(f"✅ DB connect ok: {result.scalar()}")
-            
-            # Création des tables
             async with engine.begin() as conn:
-                # Importation des modèles pour que Base.metadata les connaisse
                 from . import models
                 await conn.run_sync(Base.metadata.create_all)
                 logger.info("✅ Tables créées")
             return
-        except SQLAlchemyError as e:
-            logger.error(f"❌ Erreur SQLAlchemy (tentative {attempt+1}): {str(e)}")
-            await asyncio.sleep(retry_delay)
         except Exception as e:
-            logger.error(f"💥 Erreur inattendue: {str(e)}")
-            raise
+            last_error = e
+            logger.error(f"❌ Connexion DB échouée (tentative {attempt}/{max_retries}): {e}")
+            await asyncio.sleep(retry_delay)
+    logger.error("💥 Échec de connexion DB après toutes les tentatives")
+    raise last_error
 
 @asynccontextmanager
 async def lifespan(app):

@@ -207,6 +207,43 @@ async def get_user_decks(
     return [schemas.UserDeckResponse.model_validate(ud) for ud in user_decks]
 
 
+@router.get("/decks/all", response_model=list[schemas.UserDeckResponse])
+async def get_all_decks_with_user_stats(
+    current_user = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Récupère TOUS les decks du système avec les statistiques personnalisées de l'utilisateur.
+    
+    Pour un nouveau utilisateur :
+    - Tous les decks du système sont affichés
+    - Les decks non commencés ont une précision de 0%
+    - Les decks commencés affichent les vraies statistiques de l'utilisateur
+    """
+    all_decks = await crud_users.get_all_decks_with_user_stats(db, current_user.user_pk)
+    return [schemas.UserDeckResponse.model_validate(ud) for ud in all_decks]
+
+
+@router.get("/decks/{deck_pk}/stats", response_model=schemas.UserDeckResponse)
+async def get_deck_stats(
+    deck_pk: int,
+    current_user = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Récupère les statistiques détaillées pour un deck spécifique.
+    Retourne des stats à 0 si le deck n'est pas encore commencé.
+    """
+    try:
+        user_deck = await crud_users.get_user_deck_stats(db, current_user.user_pk, deck_pk)
+        return schemas.UserDeckResponse.model_validate(user_deck)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+
+
 @router.delete("/decks/{deck_pk}")
 async def remove_deck_from_user(
     deck_pk: int,
@@ -255,11 +292,13 @@ async def get_user_scores(
 @router.get("/scores/deck/{deck_pk}", response_model=list[schemas.UserScore])
 async def get_user_deck_scores(
     deck_pk: int,
+    limit: int = 100,
+    offset: int = 0,
     current_user = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Récupère les scores de l'utilisateur actuel pour un deck spécifique."""
-    scores = await crud_users.get_user_deck_scores(db, current_user.user_pk, deck_pk)
+    scores = await crud_users.get_user_deck_scores(db, current_user.user_pk, deck_pk, limit, offset)
     return [schemas.UserScore.model_validate(s) for s in scores]
 
 

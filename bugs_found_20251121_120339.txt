@@ -1,0 +1,20 @@
+BUGS IDENTIFIÉS
+================================================================================
+
+1. Création d'utilisateur: Status 500: Internal Server Error
+2. Connexion utilisateur: 
+3. Création d'un deck: Status 500: Internal Server Error
+4. Récupération de la liste des decks: 
+5. Récupération d'un deck par ID: Aucun deck créé pour ce test
+6. Création de cartes: Aucun deck créé pour ajouter des cartes
+7. Récupération des cartes d'un deck: Aucun deck créé
+8. Mise à jour d'une carte: Aucune carte créée pour ce test
+9. Ajout d'un deck à l'utilisateur: Aucun deck créé
+10. Récupération des decks utilisateur: Status 403: {"detail":"Not authenticated"}
+11. Quiz type 'frappe': Pas de cartes ou deck pour le quiz
+12. Quiz type 'association': Pas de cartes ou deck pour le quiz
+13. Quiz type 'QCM': Pas de cartes ou deck pour le quiz
+14. Quiz type 'classique': Pas de cartes ou deck pour le quiz
+15. Quiz avec réponse incorrecte: Pas de cartes ou deck pour le quiz
+16. Vérification algorithme Anki: Pas de cartes pour vérifier
+17. Vérification statistiques deck utilisateur: Status 403: {"detail":"Not authenticated"}

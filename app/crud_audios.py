@@ -135,7 +135,7 @@ async def get_audio_item(db: AsyncSession, audio_id: int):
     result = await db.execute(
         select(models.AudioItem).where(models.AudioItem.id == audio_id)
     )
-    item = result.all()
+    item = result.scalar_one_or_none()
 
     if not item:
         return None
