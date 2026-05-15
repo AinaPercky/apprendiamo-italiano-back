@@ -8,8 +8,12 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 import base64
 import requests
+import anyio
+import logging
 from requests.exceptions import RequestException
 from .core.image_scraper import fetch_icon_url # Import du scraper
+
+logger = logging.getLogger(__name__)
 
 def generate_id_json() -> str:
     return str(uuid.uuid4()).replace('-', '')[:7]
@@ -44,8 +48,11 @@ async def get_deck(db: AsyncSession, deck_pk: int) -> Optional[models.Deck]:
 
 def url_to_base64(url: str) -> Optional[str]:
     """Télécharge une image depuis une URL et la convertit en chaîne Base64 (Data URI)."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()  # Lève une exception pour les codes d'erreur HTTP (4xx ou 5xx)
         
         # Déterminer le type de contenu (Content-Type)
@@ -76,6 +83,21 @@ async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card
     )
     result = await db.execute(stmt)
     existing_card = result.scalars().first()
+
+    # === AUTO-IMAGE LOGIC (Before creation/update) ===
+    # Si aucune image fournie, on essaie de la trouver via scraping
+    # IMPORTANT: Ne pas remplacer une image déjà existante sur une carte existante
+    if not card.image and (not existing_card or not existing_card.image):
+        search_query = card.translation_en or card.front
+        if search_query:
+            logger.info(f"🖼️ Auto-fetching icon for '{search_query}'...")
+            # On utilise anyio.to_thread.run_sync pour ne pas bloquer l'event loop
+            scraped_url = await anyio.to_thread.run_sync(fetch_icon_url, search_query)
+            if scraped_url:
+                logger.info(f"   ✅ Found: {scraped_url[:50]}...")
+                card.image = scraped_url
+            else:
+                logger.info("   ❌ No icon found.")
 
     if existing_card:
         # === LOGIQUE D'ENRICHISSEMENT ET DE LIAISON (MANY-TO-MANY) ===
@@ -116,7 +138,7 @@ async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card
             if new_val and not current_val:
                 # Cas spécial pour l'image (conversion URL -> Base64)
                 if field == 'image' and new_val.startswith('http'):
-                    converted_image = url_to_base64(new_val)
+                    converted_image = await anyio.to_thread.run_sync(url_to_base64, new_val)
                     if converted_image:
                         setattr(existing_card, field, converted_image)
                         changes = True
@@ -139,7 +161,7 @@ async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card
     now = datetime.utcnow()
     
     # Conversion image
-    image_val = url_to_base64(card.image) if card.image and card.image.startswith('http') else card.image
+    image_val = await anyio.to_thread.run_sync(url_to_base64, card.image) if card.image and card.image.startswith('http') else card.image
 
     db_card = models.Card(
         id_json=id_json,
@@ -307,14 +329,15 @@ async def batch_upsert_cards(db: AsyncSession, cards: List[schemas.CardCreate]) 
             # IMPORTANT: Ne pas remplacer une image déjà existante sur une carte existante
             if not card.image and (not existing_card or not existing_card.image):
                 search_query = card.translation_en or card.front
-                print(f"🖼️ Auto-fetching icon for '{search_query}'...")
-                scraped_url = fetch_icon_url(search_query)
-                if scraped_url:
-                    print(f"   ✅ Found: {scraped_url[:50]}...")
-                    # On met l'URL dans card.image pour qu'elle soit traitée (convertie en Base64) plus bas
-                    card.image = scraped_url
-                else:
-                    print("   ❌ No icon found.")
+                if search_query:
+                    logger.info(f"🖼️ Auto-fetching icon for '{search_query}'...")
+                    scraped_url = await anyio.to_thread.run_sync(fetch_icon_url, search_query)
+                    if scraped_url:
+                        logger.info(f"   ✅ Found: {scraped_url[:50]}...")
+                        # On met l'URL dans card.image pour qu'elle soit traitée (convertie en Base64) plus bas
+                        card.image = scraped_url
+                    else:
+                        logger.info("   ❌ No icon found.")
 
             if existing_card:
                 # === UPDATE LOGIC (Merge/Overwrite) ===
@@ -339,7 +362,7 @@ async def batch_upsert_cards(db: AsyncSession, cards: List[schemas.CardCreate]) 
                 # === IMAGE: ne pas écraser si déjà présente ===
                 if card.image:
                     # Convertir si nécessaire
-                    image_val = url_to_base64(card.image) if card.image.startswith('http') else card.image
+                    image_val = await anyio.to_thread.run_sync(url_to_base64, card.image) if card.image.startswith('http') else card.image
                     if not existing_card.image and image_val and existing_card.image != image_val:
                         existing_card.image = image_val
                         updated = True
@@ -372,7 +395,7 @@ async def batch_upsert_cards(db: AsyncSession, cards: List[schemas.CardCreate]) 
                 id_json = card.id_json or generate_id_json()
                 now = datetime.utcnow()
                 
-                image_val = url_to_base64(card.image) if card.image and card.image.startswith('http') else card.image
+                image_val = await anyio.to_thread.run_sync(url_to_base64, card.image) if card.image and card.image.startswith('http') else card.image
 
                 db_card = models.Card(
                     id_json=id_json,
