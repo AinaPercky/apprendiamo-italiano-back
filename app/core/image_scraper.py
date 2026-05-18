@@ -13,74 +13,60 @@ logger = logging.getLogger(__name__)
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
-def fetch_iconify_image(query: str) -> Optional[str]:
+def fetch_iconify_images(query: str) -> List[str]:
     """
-    Search Iconify API for a relevant icon.
-    Returns a URL to the SVG or PNG representation.
+    Search Iconify API for relevant icons.
+    Returns a list of URLs.
     """
     url = f"https://api.iconify.design/search?query={query}&limit=5"
+    results = []
     try:
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             data = response.json()
-            if data.get('icons'):
-                # Pick the first icon
-                icon_id = data['icons'][0]
+            for icon_id in data.get('icons', []):
                 if ':' in icon_id:
                     prefix, name = icon_id.split(':', 1)
-                    # We can get it as SVG
-                    return f"https://api.iconify.design/{prefix}/{name}.svg"
+                    results.append(f"https://api.iconify.design/{prefix}/{name}.svg")
     except Exception as e:
         logger.debug(f"Iconify API error for {query}: {e}")
-    return None
+    return results
 
-def fetch_bing_image(query: str) -> Optional[str]:
+def fetch_bing_images(query: str) -> List[str]:
     """
-    Scrape Bing Images for an image URL.
+    Scrape Bing Images for image URLs.
     """
-    # Adding keywords to ensure we get an icon/clipart
     search_query = f"{query} icon png"
     url = f"https://www.bing.com/images/search?q={search_query}&form=HDRSC2&first=1"
     headers = {"User-Agent": USER_AGENT}
+    results = []
     try:
         response = requests.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
-            # Bing uses <a class="iusc" m='{"murl":"...",...}'>
             matches = re.findall(r'm="({.*?})"', response.text)
             if not matches:
                 matches = re.findall(r"m='({.*?})'", response.text)
 
-            for m in matches[:10]:
+            for m in matches[:15]:
                 try:
                     data = json.loads(m.replace('&quot;', '"'))
                     if 'murl' in data:
                         murl = data['murl']
-                        # Basic relevance check: exclude huge photos if possible, prefer known icon extensions
-                        if any(ext in murl.lower() for ext in ['.png', '.svg', '.webp']):
-                            return murl
+                        results.append(murl)
                 except:
                     continue
-
-            # If no good extension found, return first match
-            if matches:
-                 try:
-                    data = json.loads(matches[0].replace('&quot;', '"'))
-                    return data.get('murl')
-                 except: pass
-
     except Exception as e:
         logger.error(f"Bing Scraper Error for {query}: {e}")
-    return None
+    return results
 
-def fetch_wikimedia_image(query: str) -> Optional[str]:
+def fetch_wikimedia_images(query: str) -> List[str]:
     """
-    Use Wikimedia Commons API to find an image.
+    Use Wikimedia Commons API to find images.
     """
     search_url = "https://en.wikipedia.org/w/api.php"
     headers = {"User-Agent": "FlashcardApp/1.0 (contact: info@flashcardapp.com)"}
-
+    results = []
     try:
-        # 1. Search for the most relevant title
         search_params = {
             "action": "query",
             "format": "json",
@@ -91,90 +77,55 @@ def fetch_wikimedia_image(query: str) -> Optional[str]:
         r = requests.get(search_url, params=search_params, headers=headers, timeout=5)
         data = r.json()
         search_results = data.get("query", {}).get("search", [])
-        if not search_results:
-            return None
 
-        # Try to find an exact title match first
-        title = search_results[0]['title']
         for res in search_results:
-            if res['title'].lower() == query.lower():
-                title = res['title']
-                break
-
-        # 2. Get the thumbnail for this title
-        img_params = {
-            "action": "query",
-            "format": "json",
-            "prop": "pageimages",
-            "titles": title,
-            "pithumbsize": 500
-        }
-        r = requests.get(search_url, params=img_params, headers=headers, timeout=5)
-        data = r.json()
-        pages = data.get("query", {}).get("pages", {})
-        for page_id in pages:
-            thumbnail = pages[page_id].get("thumbnail", {}).get("source")
-            if thumbnail:
-                return thumbnail
+            title = res['title']
+            img_params = {
+                "action": "query",
+                "format": "json",
+                "prop": "pageimages",
+                "titles": title,
+                "pithumbsize": 500
+            }
+            r_img = requests.get(search_url, params=img_params, headers=headers, timeout=5)
+            data_img = r_img.json()
+            pages = data_img.get("query", {}).get("pages", {})
+            for page_id in pages:
+                thumbnail = pages[page_id].get("thumbnail", {}).get("source")
+                if thumbnail:
+                    results.append(thumbnail)
     except Exception as e:
         logger.error(f"Wikimedia Scraper Error for {query}: {e}")
-    return None
-
-def fetch_google_image(query: str) -> Optional[str]:
-    """
-    Fallback: Scrape Google Images for a thumbnail.
-    """
-    search_query = f"{query} icon filetype:png"
-    url = f"https://www.google.com/search?q={search_query}&tbm=isch"
-    headers = {"User-Agent": USER_AGENT}
-    
-    try:
-        response = requests.get(url, headers=headers, timeout=5)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            images = soup.find_all('img')
-            for img in images:
-                src = img.get('src')
-                if src and src.startswith('http') and 'google' not in src:
-                    return src
-                if src and src.startswith('data:image/'):
-                    return src
-    except Exception as e:
-        logger.error(f"Google Scraper Error for {query}: {e}")
-    return None
+    return results
 
 def fetch_icon_url(query: str) -> Optional[str]:
     """
     Attempts to find an icon URL for the given query.
-    Tries multiple sources and query variations.
+    Tries multiple sources and returns the FIRST ONE FOUND that's reachable.
+    Note: Now returning a single URL for backward compatibility with current flow,
+    but the internal logic could be used to return a list.
+    """
+    urls = fetch_icon_urls(query)
+    return urls[0] if urls else None
+
+def fetch_icon_urls(query: str) -> List[str]:
+    """
+    Returns a list of candidate image URLs for the query.
     """
     if not query:
-        return None
+        return []
 
-    # 1. Try Iconify (Best for clean icons)
-    url = fetch_iconify_image(query)
-    if url:
-        return url
+    all_urls = []
 
-    # 2. Try DuckDuckGo
-    try:
-        time.sleep(random.uniform(0.1, 0.3))
-        with DDGS() as ddgs:
-            results = list(ddgs.images(keywords=f"{query} icon png", max_results=1))
-            if results:
-                return results[0]['image']
-    except Exception as e:
-        logger.debug(f"DuckDuckGo Scraper failed for {query}: {e}")
+    # 1. Iconify
+    all_urls.extend(fetch_iconify_images(query))
 
-    # 3. Try Bing (More reliable)
-    url = fetch_bing_image(query)
-    if url:
-        return url
+    # 2. Bing
+    all_urls.extend(fetch_bing_images(query))
 
-    # 4. Try Wikimedia
-    url = fetch_wikimedia_image(query)
-    if url:
-        return url
+    # 3. Wikimedia
+    all_urls.extend(fetch_wikimedia_images(query))
 
-    # 5. Final Fallback to Google
-    return fetch_google_image(query)
+    # Deduplicate while preserving order
+    seen = set()
+    return [x for x in all_urls if not (x in seen or seen.add(x))]
