@@ -56,7 +56,13 @@ def url_to_base64(url: str) -> Optional[str]:
         response.raise_for_status()  # Lève une exception pour les codes d'erreur HTTP (4xx ou 5xx)
         
         # Déterminer le type de contenu (Content-Type)
-        content_type = response.headers.get('Content-Type', 'image/jpeg')
+        content_type = response.headers.get('Content-Type', '').split(';')[0].strip()
+        if not content_type or 'text' in content_type:
+             # Fallback based on extension if content-type is missing or wrong
+             if url.endswith('.png'): content_type = 'image/png'
+             elif url.endswith('.svg'): content_type = 'image/svg+xml'
+             elif url.endswith('.webp'): content_type = 'image/webp'
+             else: content_type = 'image/jpeg'
         
         # Encoder le contenu en Base64
         base64_encoded_data = base64.b64encode(response.content)
