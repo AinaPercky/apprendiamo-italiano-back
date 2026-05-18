@@ -13,6 +13,22 @@ logger = logging.getLogger(__name__)
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
+# Blacklist of domains or keywords to avoid inappropriate content
+BLACKLIST_KEYWORDS = [
+    "porn", "sexy", "nudity", "sex", "adult", "naked", "xxx", "zendaya", "escort", "dating", "bikini"
+]
+
+def is_safe_url(url: str) -> bool:
+    """
+    Check if a URL contains any blacklisted keywords.
+    """
+    url_lower = url.lower()
+    for keyword in BLACKLIST_KEYWORDS:
+        if keyword in url_lower:
+            logger.warning(f"🚫 URL blocked by safety filter: {url}")
+            return False
+    return True
+
 def fetch_iconify_images(query: str) -> List[str]:
     """
     Search Iconify API for relevant icons.
@@ -34,10 +50,11 @@ def fetch_iconify_images(query: str) -> List[str]:
 
 def fetch_bing_images(query: str) -> List[str]:
     """
-    Scrape Bing Images for image URLs.
+    Scrape Bing Images for image URLs with SafeSearch.
     """
+    # adlt=strict activates Bing's SafeSearch
     search_query = f"{query} icon png"
-    url = f"https://www.bing.com/images/search?q={search_query}&form=HDRSC2&first=1"
+    url = f"https://www.bing.com/images/search?q={search_query}&form=HDRSC2&first=1&adlt=strict"
     headers = {"User-Agent": USER_AGENT}
     results = []
     try:
@@ -52,11 +69,33 @@ def fetch_bing_images(query: str) -> List[str]:
                     data = json.loads(m.replace('&quot;', '"'))
                     if 'murl' in data:
                         murl = data['murl']
-                        results.append(murl)
+                        if is_safe_url(murl):
+                            results.append(murl)
                 except:
                     continue
     except Exception as e:
         logger.error(f"Bing Scraper Error for {query}: {e}")
+    return results
+
+def fetch_duckduckgo_images(query: str) -> List[str]:
+    """
+    Search DuckDuckGo with SafeSearch.
+    """
+    results = []
+    try:
+        time.sleep(random.uniform(0.1, 0.3))
+        with DDGS() as ddgs:
+            # safesearch='strict' ensures safe results
+            ddgs_results = ddgs.images(
+                keywords=f"{query} icon png",
+                max_results=5,
+                safesearch='strict'
+            )
+            for r in ddgs_results:
+                if is_safe_url(r['image']):
+                    results.append(r['image'])
+    except Exception as e:
+        logger.debug(f"DuckDuckGo Scraper failed for {query}: {e}")
     return results
 
 def fetch_wikimedia_images(query: str) -> List[str]:
@@ -93,17 +132,26 @@ def fetch_wikimedia_images(query: str) -> List[str]:
             for page_id in pages:
                 thumbnail = pages[page_id].get("thumbnail", {}).get("source")
                 if thumbnail:
-                    results.append(thumbnail)
+                    if is_safe_url(thumbnail):
+                        results.append(thumbnail)
     except Exception as e:
         logger.error(f"Wikimedia Scraper Error for {query}: {e}")
     return results
 
+# Map of abstract terms to concrete icon keywords
+ABSTRACT_MAP = {
+    "competitiveness": ["target", "award", "rocket", "success"],
+    "proactive": ["lightbulb", "speed", "action", "launch"],
+    "qualified": ["certificate", "verified", "badge", "check"],
+    "performance": ["chart", "speedometer", "rocket"],
+    "recruitment": ["hiring", "interview", "user-plus"],
+    "management": ["briefcase", "users", "groups"],
+    "professional": ["briefcase", "user-tie"],
+}
+
 def fetch_icon_url(query: str) -> Optional[str]:
     """
     Attempts to find an icon URL for the given query.
-    Tries multiple sources and returns the FIRST ONE FOUND that's reachable.
-    Note: Now returning a single URL for backward compatibility with current flow,
-    but the internal logic could be used to return a list.
     """
     urls = fetch_icon_urls(query)
     return urls[0] if urls else None
@@ -115,17 +163,38 @@ def fetch_icon_urls(query: str) -> List[str]:
     if not query:
         return []
 
+    cleaned_query = query.lower().strip()
     all_urls = []
 
-    # 1. Iconify
-    all_urls.extend(fetch_iconify_images(query))
+    # 1. Try exact matches on Iconify
+    all_urls.extend(fetch_iconify_images(cleaned_query))
 
-    # 2. Bing
-    all_urls.extend(fetch_bing_images(query))
+    # 2. If it's an abstract term, try mapping to concrete icons
+    if not all_urls:
+        for term, substitutes in ABSTRACT_MAP.items():
+            if term in cleaned_query:
+                for sub in substitutes:
+                    all_urls.extend(fetch_iconify_images(sub))
+                break
 
-    # 3. Wikimedia
-    all_urls.extend(fetch_wikimedia_images(query))
+    # 3. If still nothing from Iconify, try safe scrapers
+    if not all_urls:
+        # DDG SafeSearch
+        all_urls.extend(fetch_duckduckgo_images(cleaned_query))
 
-    # Deduplicate while preserving order
+        # Bing SafeSearch
+        all_urls.extend(fetch_bing_images(cleaned_query))
+
+        # Wikimedia
+        all_urls.extend(fetch_wikimedia_images(cleaned_query))
+
+    # Deduplicate while preserving order and ensuring safety
     seen = set()
-    return [x for x in all_urls if not (x in seen or seen.add(x))]
+    final_results = []
+    for url in all_urls:
+        if url not in seen:
+            seen.add(url)
+            if is_safe_url(url):
+                final_results.append(url)
+
+    return final_results
