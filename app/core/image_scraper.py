@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
 # Blacklist of domains or keywords to avoid inappropriate content
-# Expanded to be more comprehensive based on the user feedback
 BLACKLIST_KEYWORDS = [
     "porn", "sexy", "nudity", "sex", "adult", "naked", "xxx", "zendaya", "escort", "dating", "bikini",
     "hot", "erotic", "nsfw", "playboy", "pussy", "dick", "vagina", "bra", "lingerie", "strip",
@@ -26,19 +25,16 @@ def is_safe_url(url: str) -> bool:
     Check if a URL contains any blacklisted keywords.
     """
     url_lower = url.lower()
-    # Check for direct keyword matches
     for keyword in BLACKLIST_KEYWORDS:
         if keyword in url_lower:
             logger.warning(f"🚫 URL blocked by safety filter (keyword: {keyword}): {url}")
             return False
-
-    # Check for suspicious domains or patterns (optional refinement)
     return True
 
 def fetch_iconify_images(query: str) -> List[str]:
     """
     Search Iconify API for relevant icons.
-    Returns a list of URLs.
+    Returns a list of URLs with specified size for better resolution.
     """
     url = f"https://api.iconify.design/search?query={query}&limit=5"
     results = []
@@ -49,18 +45,20 @@ def fetch_iconify_images(query: str) -> List[str]:
             for icon_id in data.get('icons', []):
                 if ':' in icon_id:
                     prefix, name = icon_id.split(':', 1)
-                    results.append(f"https://api.iconify.design/{prefix}/{name}.svg")
+                    # Add height parameter to get a decent resolution SVG/PNG
+                    results.append(f"https://api.iconify.design/{prefix}/{name}.svg?height=512")
     except Exception as e:
         logger.debug(f"Iconify API error for {query}: {e}")
     return results
 
 def fetch_bing_images(query: str) -> List[str]:
     """
-    Scrape Bing Images for image URLs with SafeSearch.
+    Scrape Bing Images for high-resolution image URLs with SafeSearch.
     """
     # adlt=strict activates Bing's SafeSearch
+    # filterui:imagesize-large prioritizes large images
     search_query = f"{query} icon png"
-    url = f"https://www.bing.com/images/search?q={search_query}&form=HDRSC2&first=1&adlt=strict"
+    url = f"https://www.bing.com/images/search?q={search_query}&form=HDRSC2&first=1&adlt=strict&qft=+filterui:imagesize-large"
     headers = {"User-Agent": USER_AGENT}
     results = []
     try:
@@ -86,14 +84,16 @@ def fetch_bing_images(query: str) -> List[str]:
 def fetch_duckduckgo_images(query: str) -> List[str]:
     """
     Search DuckDuckGo with SafeSearch.
+    Note: DDGS doesn't easily support size filtering via its simple API,
+    so we rely on query keywords.
     """
     results = []
     try:
         time.sleep(random.uniform(0.1, 0.3))
         with DDGS() as ddgs:
-            # safesearch='strict' ensures safe results
+            # Adding "high resolution" to the query
             ddgs_results = ddgs.images(
-                keywords=f"{query} icon png",
+                keywords=f"{query} icon png high resolution",
                 max_results=5,
                 safesearch='strict'
             )
@@ -106,7 +106,7 @@ def fetch_duckduckgo_images(query: str) -> List[str]:
 
 def fetch_wikimedia_images(query: str) -> List[str]:
     """
-    Use Wikimedia Commons API to find images.
+    Use Wikimedia Commons API to find high-resolution images.
     """
     search_url = "https://en.wikipedia.org/w/api.php"
     headers = {"User-Agent": "FlashcardApp/1.0 (contact: info@flashcardapp.com)"}
@@ -130,7 +130,7 @@ def fetch_wikimedia_images(query: str) -> List[str]:
                 "format": "json",
                 "prop": "pageimages",
                 "titles": title,
-                "pithumbsize": 500
+                "pithumbsize": 1024 # Increased from 500 to 1024
             }
             r_img = requests.get(search_url, params=img_params, headers=headers, timeout=5)
             data_img = r_img.json()
@@ -180,23 +180,15 @@ def fetch_icon_urls(query: str) -> List[str]:
     for term, substitutes in ABSTRACT_MAP.items():
         if term in cleaned_query:
             is_abstract = True
-            # For abstract terms, we ONLY use Iconify with substitutes if Iconify exact match failed
-            # This avoids falling back to risky general scrapers for difficult terms
             if not all_urls:
                 for sub in substitutes:
                     all_urls.extend(fetch_iconify_images(sub))
             break
 
-    # 3. Fallback to safe scrapers ONLY if Iconify (exact or substitute) failed
-    # and ONLY if the term is not identified as abstract (to avoid irrelevant photo results)
+    # 3. Fallback to safe scrapers ONLY if Iconify failed
     if not all_urls and not is_abstract:
-        # DDG SafeSearch
         all_urls.extend(fetch_duckduckgo_images(cleaned_query))
-
-        # Bing SafeSearch
         all_urls.extend(fetch_bing_images(cleaned_query))
-
-        # Wikimedia
         all_urls.extend(fetch_wikimedia_images(cleaned_query))
 
     # Deduplicate while preserving order and ensuring safety
