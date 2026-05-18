@@ -5,18 +5,37 @@ from sqlalchemy.orm import joinedload
 from . import models, schemas
 import uuid
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import base64
 import requests
 import anyio
 import logging
 from requests.exceptions import RequestException
-from .core.image_scraper import fetch_icon_url # Import du scraper
+from .core.image_scraper import fetch_icon_url, fetch_icon_urls # Import du scraper
 
 logger = logging.getLogger(__name__)
 
 def generate_id_json() -> str:
     return str(uuid.uuid4()).replace('-', '')[:7]
+
+def clean_search_query(query: str) -> str:
+    """
+    Nettoie la requête de recherche :
+    - Prend la première partie avant un '/'
+    - Enlève le 'to ' initial pour les verbes anglais
+    - Nettoie les espaces superflus
+    """
+    if not query:
+        return ""
+
+    # Séparer par '/' et prendre le premier élément
+    query = query.split('/')[0].strip()
+
+    # Enlever le 'to ' initial (insensible à la casse)
+    if query.lower().startswith("to "):
+        query = query[3:].strip()
+
+    return query
 
 
 # ==================== DECKS ====================
@@ -94,16 +113,25 @@ async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card
     # Si aucune image fournie, on essaie de la trouver via scraping
     # IMPORTANT: Ne pas remplacer une image déjà existante sur une carte existante
     if not card.image and (not existing_card or not existing_card.image):
-        search_query = card.translation_en or card.front
+        search_query = clean_search_query(card.translation_en or card.front)
         if search_query:
             logger.info(f"🖼️ Auto-fetching icon for '{search_query}'...")
             # On utilise anyio.to_thread.run_sync pour ne pas bloquer l'event loop
-            scraped_url = await anyio.to_thread.run_sync(fetch_icon_url, search_query)
+            candidate_urls = await anyio.to_thread.run_sync(fetch_icon_urls, search_query)
+
+            scraped_url = None
+            for url in candidate_urls[:5]: # Essayer les 5 premiers
+                # Vérifier si l'URL est accessible et non interdite (403)
+                converted = await anyio.to_thread.run_sync(url_to_base64, url)
+                if converted:
+                    scraped_url = converted # On stocke directement le base64
+                    break
+
             if scraped_url:
-                logger.info(f"   ✅ Found: {scraped_url[:50]}...")
-                card.image = scraped_url
+                logger.info(f"   ✅ Found and downloaded: {candidate_urls[0][:50]}...")
+                card.image = scraped_url # card.image contient déjà le base64
             else:
-                logger.info("   ❌ No icon found.")
+                logger.info("   ❌ No reachable icon found.")
 
     if existing_card:
         # === LOGIQUE D'ENRICHISSEMENT ET DE LIAISON (MANY-TO-MANY) ===
@@ -164,7 +192,7 @@ async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card
 
     # 2. Création normale si la carte n'existe pas
     id_json = card.id_json or generate_id_json()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     # Conversion image
     image_val = await anyio.to_thread.run_sync(url_to_base64, card.image) if card.image and card.image.startswith('http') else card.image
@@ -244,7 +272,7 @@ async def get_cards(
     if tags_filter:
         stmt = stmt.where(models.Card.tags.contains(tags_filter))
     if due_only:
-        stmt = stmt.where(models.Card.next_review <= datetime.utcnow())
+        stmt = stmt.where(models.Card.next_review <= datetime.now(timezone.utc))
 
     stmt = stmt.offset(skip).limit(limit).order_by(models.Card.next_review)
 
@@ -303,7 +331,7 @@ async def get_due_cards(db: AsyncSession, user_pk: int, limit: int = 50) -> List
         .join(models.UserDeck, models.UserDeck.deck_pk == models.deck_cards.c.deck_pk)\
         .where(
             models.UserDeck.user_pk == user_pk,
-            models.Card.next_review <= datetime.utcnow()
+            models.Card.next_review <= datetime.now(timezone.utc)
         )\
         .order_by(models.Card.next_review)\
         .limit(limit)
@@ -334,16 +362,23 @@ async def batch_upsert_cards(db: AsyncSession, cards: List[schemas.CardCreate]) 
             # Si aucune image fournie, on essaie de la trouver via scraping
             # IMPORTANT: Ne pas remplacer une image déjà existante sur une carte existante
             if not card.image and (not existing_card or not existing_card.image):
-                search_query = card.translation_en or card.front
+                search_query = clean_search_query(card.translation_en or card.front)
                 if search_query:
                     logger.info(f"🖼️ Auto-fetching icon for '{search_query}'...")
-                    scraped_url = await anyio.to_thread.run_sync(fetch_icon_url, search_query)
+                    candidate_urls = await anyio.to_thread.run_sync(fetch_icon_urls, search_query)
+
+                    scraped_url = None
+                    for url in candidate_urls[:5]:
+                        converted = await anyio.to_thread.run_sync(url_to_base64, url)
+                        if converted:
+                            scraped_url = converted
+                            break
+
                     if scraped_url:
-                        logger.info(f"   ✅ Found: {scraped_url[:50]}...")
-                        # On met l'URL dans card.image pour qu'elle soit traitée (convertie en Base64) plus bas
+                        logger.info(f"   ✅ Found and downloaded: {candidate_urls[0][:50]}...")
                         card.image = scraped_url
                     else:
-                        logger.info("   ❌ No icon found.")
+                        logger.info("   ❌ No reachable icon found.")
 
             if existing_card:
                 # === UPDATE LOGIC (Merge/Overwrite) ===
@@ -399,7 +434,7 @@ async def batch_upsert_cards(db: AsyncSession, cards: List[schemas.CardCreate]) 
             else:
                 # === CREATE LOGIC ===
                 id_json = card.id_json or generate_id_json()
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 
                 image_val = await anyio.to_thread.run_sync(url_to_base64, card.image) if card.image and card.image.startswith('http') else card.image
 
