@@ -14,8 +14,11 @@ logger = logging.getLogger(__name__)
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
 # Blacklist of domains or keywords to avoid inappropriate content
+# Expanded to be more comprehensive based on the user feedback
 BLACKLIST_KEYWORDS = [
-    "porn", "sexy", "nudity", "sex", "adult", "naked", "xxx", "zendaya", "escort", "dating", "bikini"
+    "porn", "sexy", "nudity", "sex", "adult", "naked", "xxx", "zendaya", "escort", "dating", "bikini",
+    "hot", "erotic", "nsfw", "playboy", "pussy", "dick", "vagina", "bra", "lingerie", "strip",
+    "ass", "butt", "fuck", "cock", "blowjob", "orgasm", "penis"
 ]
 
 def is_safe_url(url: str) -> bool:
@@ -23,10 +26,13 @@ def is_safe_url(url: str) -> bool:
     Check if a URL contains any blacklisted keywords.
     """
     url_lower = url.lower()
+    # Check for direct keyword matches
     for keyword in BLACKLIST_KEYWORDS:
         if keyword in url_lower:
-            logger.warning(f"🚫 URL blocked by safety filter: {url}")
+            logger.warning(f"🚫 URL blocked by safety filter (keyword: {keyword}): {url}")
             return False
+
+    # Check for suspicious domains or patterns (optional refinement)
     return True
 
 def fetch_iconify_images(query: str) -> List[str]:
@@ -166,19 +172,24 @@ def fetch_icon_urls(query: str) -> List[str]:
     cleaned_query = query.lower().strip()
     all_urls = []
 
-    # 1. Try exact matches on Iconify
+    # 1. Try exact matches on Iconify (highly relevant and safe)
     all_urls.extend(fetch_iconify_images(cleaned_query))
 
-    # 2. If it's an abstract term, try mapping to concrete icons
-    if not all_urls:
-        for term, substitutes in ABSTRACT_MAP.items():
-            if term in cleaned_query:
+    # 2. Handle abstract terms by substituting concrete keywords
+    is_abstract = False
+    for term, substitutes in ABSTRACT_MAP.items():
+        if term in cleaned_query:
+            is_abstract = True
+            # For abstract terms, we ONLY use Iconify with substitutes if Iconify exact match failed
+            # This avoids falling back to risky general scrapers for difficult terms
+            if not all_urls:
                 for sub in substitutes:
                     all_urls.extend(fetch_iconify_images(sub))
-                break
+            break
 
-    # 3. If still nothing from Iconify, try safe scrapers
-    if not all_urls:
+    # 3. Fallback to safe scrapers ONLY if Iconify (exact or substitute) failed
+    # and ONLY if the term is not identified as abstract (to avoid irrelevant photo results)
+    if not all_urls and not is_abstract:
         # DDG SafeSearch
         all_urls.extend(fetch_duckduckgo_images(cleaned_query))
 
