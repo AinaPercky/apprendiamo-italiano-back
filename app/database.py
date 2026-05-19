@@ -1,7 +1,11 @@
 import asyncio
 import logging
 import os
+from dotenv import load_dotenv
 from contextlib import asynccontextmanager
+
+# Charger les variables d'environnement depuis le fichier .env
+load_dotenv()
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
