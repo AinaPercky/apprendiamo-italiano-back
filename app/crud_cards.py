@@ -128,7 +128,8 @@ async def create_card(db: AsyncSession, card: schemas.CardCreate) -> models.Card
                     break
 
             if scraped_url:
-                logger.info(f"   ✅ Found and downloaded: {candidate_urls[0][:50]}...")
+                # On ne logue que si on a trouvé un candidat réussi
+                logger.info("   ✅ Icon successfully found and downloaded from Magnific.")
                 card.image = scraped_url # card.image contient déjà le base64
             else:
                 logger.info("   ❌ No reachable icon found.")
@@ -375,7 +376,7 @@ async def batch_upsert_cards(db: AsyncSession, cards: List[schemas.CardCreate]) 
                             break
 
                     if scraped_url:
-                        logger.info(f"   ✅ Found and downloaded: {candidate_urls[0][:50]}...")
+                        logger.info("   ✅ Icon successfully found and downloaded from Magnific.")
                         card.image = scraped_url
                     else:
                         logger.info("   ❌ No reachable icon found.")
