@@ -45,7 +45,6 @@ def fetch_iconify_images(query: str) -> List[str]:
             for icon_id in data.get('icons', []):
                 if ':' in icon_id:
                     prefix, name = icon_id.split(':', 1)
-                    # Add height parameter to get a decent resolution SVG/PNG
                     results.append(f"https://api.iconify.design/{prefix}/{name}.svg?height=512")
     except Exception as e:
         logger.debug(f"Iconify API error for {query}: {e}")
@@ -54,13 +53,16 @@ def fetch_iconify_images(query: str) -> List[str]:
 def fetch_bing_images(query: str) -> List[str]:
     """
     Scrape Bing Images for high-resolution image URLs with SafeSearch.
+    Prioritizes Flaticon results if found.
     """
-    # adlt=strict activates Bing's SafeSearch
-    # filterui:imagesize-large prioritizes large images
-    search_query = f"{query} icon png"
+    # Adding "flaticon icon" to favor the requested style
+    search_query = f"{query} flaticon icon png"
     url = f"https://www.bing.com/images/search?q={search_query}&form=HDRSC2&first=1&adlt=strict&qft=+filterui:imagesize-large"
     headers = {"User-Agent": USER_AGENT}
-    results = []
+
+    results_flaticon = []
+    results_other = []
+
     try:
         response = requests.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
@@ -68,41 +70,49 @@ def fetch_bing_images(query: str) -> List[str]:
             if not matches:
                 matches = re.findall(r"m='({.*?})'", response.text)
 
-            for m in matches[:15]:
+            for m in matches[:20]:
                 try:
                     data = json.loads(m.replace('&quot;', '"'))
                     if 'murl' in data:
                         murl = data['murl']
                         if is_safe_url(murl):
-                            results.append(murl)
+                            if "flaticon.com" in murl.lower():
+                                results_flaticon.append(murl)
+                            else:
+                                results_other.append(murl)
                 except:
                     continue
     except Exception as e:
         logger.error(f"Bing Scraper Error for {query}: {e}")
-    return results
+
+    return results_flaticon + results_other
 
 def fetch_duckduckgo_images(query: str) -> List[str]:
     """
     Search DuckDuckGo with SafeSearch.
-    Note: DDGS doesn't easily support size filtering via its simple API,
-    so we rely on query keywords.
+    Prioritizes Flaticon results if found.
     """
-    results = []
+    results_flaticon = []
+    results_other = []
     try:
         time.sleep(random.uniform(0.1, 0.3))
         with DDGS() as ddgs:
-            # Adding "high resolution" to the query
             ddgs_results = ddgs.images(
-                keywords=f"{query} icon png high resolution",
-                max_results=5,
+                keywords=f"{query} flaticon icon png high resolution",
+                max_results=10,
                 safesearch='strict'
             )
             for r in ddgs_results:
-                if is_safe_url(r['image']):
-                    results.append(r['image'])
+                murl = r['image']
+                if is_safe_url(murl):
+                    if "flaticon.com" in murl.lower():
+                        results_flaticon.append(murl)
+                    else:
+                        results_other.append(murl)
     except Exception as e:
         logger.debug(f"DuckDuckGo Scraper failed for {query}: {e}")
-    return results
+
+    return results_flaticon + results_other
 
 def fetch_wikimedia_images(query: str) -> List[str]:
     """
@@ -130,7 +140,7 @@ def fetch_wikimedia_images(query: str) -> List[str]:
                 "format": "json",
                 "prop": "pageimages",
                 "titles": title,
-                "pithumbsize": 1024 # Increased from 500 to 1024
+                "pithumbsize": 1024
             }
             r_img = requests.get(search_url, params=img_params, headers=headers, timeout=5)
             data_img = r_img.json()
@@ -185,10 +195,15 @@ def fetch_icon_urls(query: str) -> List[str]:
                     all_urls.extend(fetch_iconify_images(sub))
             break
 
-    # 3. Fallback to safe scrapers ONLY if Iconify failed
-    if not all_urls and not is_abstract:
+    # 3. Fallback to safe scrapers with Flaticon prioritization
+    if not all_urls or not is_abstract:
+        # DDG with flaticon keywords
         all_urls.extend(fetch_duckduckgo_images(cleaned_query))
+
+        # Bing with flaticon keywords
         all_urls.extend(fetch_bing_images(cleaned_query))
+
+        # Wikimedia
         all_urls.extend(fetch_wikimedia_images(cleaned_query))
 
     # Deduplicate while preserving order and ensuring safety
