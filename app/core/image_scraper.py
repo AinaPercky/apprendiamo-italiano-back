@@ -7,14 +7,15 @@ from typing import Optional, List
 logger = logging.getLogger(__name__)
 
 MAGNIFIC_API_BASE_URL = "https://api.magnific.com/v1"
-MAGNIFIC_API_KEY = os.getenv("MAGNIFIC_API_KEY")
 
 def get_magnific_headers():
-    if not MAGNIFIC_API_KEY:
+    # Fetch key dynamically to allow updating env vars without restart if needed (or for testing)
+    api_key = os.getenv("MAGNIFIC_API_KEY")
+    if not api_key:
         logger.error("❌ MAGNIFIC_API_KEY is not set in environment variables.")
         return None
     return {
-        "x-magnific-api-key": MAGNIFIC_API_KEY,
+        "x-magnific-api-key": api_key,
         "Accept": "application/json"
     }
 
@@ -39,7 +40,6 @@ def fetch_magnific_icons(query: str) -> List[str]:
             data = response.json()
             results = []
             for icon in data.get('data', []):
-                # Search for the best thumbnail
                 thumbnails = icon.get('thumbnails', [])
                 if thumbnails:
                     # Prefer 512px if available, otherwise first one
@@ -51,6 +51,10 @@ def fetch_magnific_icons(query: str) -> List[str]:
                     if thumb_url:
                         results.append(thumb_url)
             return results
+        elif response.status_code == 429:
+            logger.error("⚠️ Magnific API Quota Exceeded (429). Please check your plan.")
+        elif response.status_code == 401:
+            logger.error("❌ Magnific API Unauthorized (401). Please check your MAGNIFIC_API_KEY.")
         else:
             logger.error(f"Magnific Icons API error: {response.status_code} - {response.text}")
     except Exception as e:
@@ -77,12 +81,12 @@ def fetch_magnific_stock(query: str) -> List[str]:
             data = response.json()
             results = []
             for resource in data.get('data', []):
-                # Get download URL if possible or thumbnail
-                # For stock, detail or thumbnails might be needed
                 thumbnails = resource.get('thumbnails', [])
                 if thumbnails:
                     results.append(thumbnails[0].get('url'))
             return results
+        elif response.status_code == 429:
+            logger.error("⚠️ Magnific API Quota Exceeded (429).")
     except Exception as e:
         logger.error(f"Magnific Stock API Exception for {query}: {e}")
     return []
@@ -101,7 +105,8 @@ def fetch_icon_urls(query: str) -> List[str]:
     if not query:
         return []
 
-    if not MAGNIFIC_API_KEY:
+    # Check key presence before attempting
+    if not os.getenv("MAGNIFIC_API_KEY"):
         logger.warning("⚠️ MAGNIFIC_API_KEY is missing. Cannot fetch images from Magnific.")
         return []
 
