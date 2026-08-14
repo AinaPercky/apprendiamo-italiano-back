@@ -430,7 +430,7 @@ async def migrate_legacy_card_images(db: AsyncSession, limit: int = 5) -> dict:
                     models.Card.image != "",
                     models.CardMedia.media_pk.is_(None),
                 )
-                .order_by(models.Card.card_pk)
+                .order_by(models.Card.image.like("data:%").desc(), models.Card.card_pk)
                 .limit(safe_limit)
             )
         ).all()
@@ -481,7 +481,7 @@ async def migrate_legacy_card_images(db: AsyncSession, limit: int = 5) -> dict:
             models.Card.image != "",
             models.CardMedia.media_pk.is_(None),
         )
-        .order_by(models.Card.card_pk)
+        .order_by(models.Card.image.like("data:%").desc(), models.Card.card_pk)
         .limit(1)
     )
     return {
