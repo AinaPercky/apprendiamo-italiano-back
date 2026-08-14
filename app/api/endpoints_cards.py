@@ -3,10 +3,10 @@ import os
 import secrets
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import crud_cards, crud_decks, schemas
+from .. import blob_storage, crud_cards, crud_decks, schemas
 from ..database import get_db
 
 router = APIRouter(
@@ -53,6 +53,7 @@ async def migrate_card_media(
     limit: int = Query(5, ge=1, le=25),
     x_media_migration_token: Optional[str] = Header(default=None),
     media_migration_token: Optional[str] = Form(default=None),
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Exécute un lot d’externalisation, réservé à l’opérateur de migration.
@@ -67,7 +68,10 @@ async def migrate_card_media(
     ):
         # Ne révèle pas l’existence de cette opération interne.
         raise HTTPException(status_code=404, detail="Not found")
-    return await crud_cards.migrate_legacy_card_images(db, limit=limit)
+    with blob_storage.vercel_oidc_request_context(
+        request.headers.get("x-vercel-oidc-token") if request else None
+    ):
+        return await crud_cards.migrate_legacy_card_images(db, limit=limit)
 
 
 @router.post("/cards/", response_model=schemas.Card)

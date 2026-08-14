@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from contextlib import contextmanager
+from contextvars import ContextVar
 import mimetypes
 import os
 import re
@@ -23,6 +25,8 @@ import requests
 BLOB_API_URL = os.getenv("VERCEL_BLOB_API_URL", "https://vercel.com/api/blob")
 BLOB_API_VERSION = os.getenv("VERCEL_BLOB_API_VERSION_OVERRIDE", "12")
 MAX_SERVER_UPLOAD_BYTES = int(os.getenv("BLOB_MAX_UPLOAD_BYTES", "4194304"))
+_request_oidc_token: ContextVar[str] = ContextVar("vercel_oidc_token", default="")
+
 IMAGE_CONTENT_TYPES = {
     "image/jpeg",
     "image/png",
@@ -58,9 +62,19 @@ def _store_id_from_read_write_token(token: str) -> str:
     return parts[3]
 
 
+@contextmanager
+def vercel_oidc_request_context(token: Optional[str]):
+    """Expose le jeton OIDC injecté par Vercel à l’opération Blob courante."""
+    context_token = _request_oidc_token.set((token or "").strip())
+    try:
+        yield
+    finally:
+        _request_oidc_token.reset(context_token)
+
+
 def _resolve_auth() -> tuple[str, str]:
     """Retourne le jeton et l’identifiant de store employés par l’API Blob."""
-    oidc_token = os.getenv("VERCEL_OIDC_TOKEN", "").strip()
+    oidc_token = _request_oidc_token.get() or os.getenv("VERCEL_OIDC_TOKEN", "").strip()
     store_id = os.getenv("BLOB_STORE_ID", "").strip()
     if oidc_token and store_id:
         return oidc_token, _normalise_store_id(store_id)
@@ -70,8 +84,8 @@ def _resolve_auth() -> tuple[str, str]:
         return read_write_token, _normalise_store_id(_store_id_from_read_write_token(read_write_token))
 
     raise BlobStorageError(
-        "Vercel Blob n’est pas configuré : BLOB_STORE_ID et VERCEL_OIDC_TOKEN "
-        "sont requis en Vercel ; BLOB_READ_WRITE_TOKEN est accepté en local."
+        "Vercel Blob n’est pas configuré : BLOB_STORE_ID et le jeton OIDC de la "
+        "requête Vercel sont requis en production ; BLOB_READ_WRITE_TOKEN est accepté en local."
     )
 
 
