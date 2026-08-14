@@ -1,9 +1,9 @@
 # app/api/endpoints_cards.py
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, File, UploadFile, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
-from .. import crud_cards, crud_decks, schemas
+from .. import crud_cards, crud_decks, crud_card_audio, schemas
 from ..database import get_db
 
 router = APIRouter(
@@ -63,6 +63,42 @@ async def read_cards(
         db, skip=skip, limit=limit, deck_pk=deck_pk, search=search, 
         min_box=min_box, due_only=due_only
     )
+
+@router.post("/cards/{card_pk}/audio", response_model=schemas.CardAudioPublic)
+async def upload_card_audio(
+    card_pk: int,
+    audio_file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        audio = await crud_card_audio.upsert_card_audio(db, card_pk, audio_file)
+    except crud_card_audio.CardAudioValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if audio is None:
+        raise HTTPException(status_code=404, detail="Card not found")
+    return audio
+
+
+@router.get("/cards/{card_pk}/audio")
+async def read_card_audio(card_pk: int, db: AsyncSession = Depends(get_db)):
+    audio_result = await crud_card_audio.get_card_audio_bytes(db, card_pk)
+    if audio_result is None:
+        raise HTTPException(status_code=404, detail="Audio pronunciation not found")
+    payload, content_type = audio_result
+    return Response(
+        content=payload,
+        media_type=content_type,
+        headers={"Content-Disposition": 'inline; filename="pronunciation.mp3"'},
+    )
+
+
+@router.delete("/cards/{card_pk}/audio")
+async def remove_card_audio(card_pk: int, db: AsyncSession = Depends(get_db)):
+    deleted = await crud_card_audio.delete_card_audio(db, card_pk)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Audio pronunciation not found")
+    return {"detail": "Card audio deleted"}
+
 
 @router.get("/cards/{card_pk}", response_model=schemas.Card)
 async def read_card(card_pk: int, db: AsyncSession = Depends(get_db)):
