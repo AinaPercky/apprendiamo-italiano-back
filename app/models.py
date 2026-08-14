@@ -111,6 +111,10 @@ class CardAudio(Base):
 
     card = relationship("Card", back_populates="audio")
 
+    @property
+    def audio_url(self) -> str:
+        return f"/cards/{self.card_pk}/audio"
+
 
 class User(Base):
     __tablename__ = "users"
