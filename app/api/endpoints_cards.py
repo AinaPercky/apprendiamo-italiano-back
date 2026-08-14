@@ -3,7 +3,7 @@ import os
 import secrets
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud_cards, crud_decks, schemas
@@ -52,12 +52,18 @@ async def batch_import_cards(cards: List[schemas.CardCreate], db: AsyncSession =
 async def migrate_card_media(
     limit: int = Query(5, ge=1, le=25),
     x_media_migration_token: Optional[str] = Header(default=None),
+    media_migration_token: Optional[str] = Form(default=None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Exécute un lot d’externalisation, réservé à l’opérateur de migration."""
+    """Exécute un lot d’externalisation, réservé à l’opérateur de migration.
+
+    Le champ de formulaire est destiné au déclenchement ponctuel inter-origines
+    depuis le tableau Vercel, sans placer le secret dans une URL ni ouvrir CORS.
+    """
     expected_token = os.getenv("MEDIA_MIGRATION_TOKEN", "")
-    if not expected_token or not x_media_migration_token or not secrets.compare_digest(
-        x_media_migration_token, expected_token
+    supplied_token = x_media_migration_token or media_migration_token
+    if not expected_token or not supplied_token or not secrets.compare_digest(
+        supplied_token, expected_token
     ):
         # Ne révèle pas l’existence de cette opération interne.
         raise HTTPException(status_code=404, detail="Not found")
