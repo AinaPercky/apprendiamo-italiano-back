@@ -39,9 +39,7 @@ class CardBase(BaseModel):
     front: str
     back: str
     pronunciation: Optional[str] = None
-    # Entrée : Data URI ou URL HTTP(S), convertie côté backend en URL Vercel Blob.
-    # Sortie : URL publique Blob uniquement, jamais un contenu encodé en base64.
-    image: Optional[str] = None
+    image: Optional[str] = None # Contient désormais l'image en Base64 (Data URI) ou l'URL originale si non convertie
     
     # Nouveaux champs optionnels
     explanation_it: Optional[str] = None
@@ -71,17 +69,6 @@ class CardCreate(CardBase):
     next_review: datetime
 
 
-class CardMediaPublic(BaseModel):
-    media_pk: int
-    kind: Literal["image", "audio"]
-    url: str
-    content_type: str
-    size_bytes: int
-    is_primary: bool = True
-
-    model_config = {"from_attributes": True}
-
-
 class Card(CardBase):
     card_pk: int
     id_json: str
@@ -93,7 +80,6 @@ class Card(CardBase):
     easiness: float = 2.5
     interval: int = 0
     consecutive_correct: int = 0
-    media: List[CardMediaPublic] = []
 
     model_config = {"from_attributes": True}
 
@@ -320,7 +306,7 @@ class QuizCardPublic(BaseModel):
     front: str
     back: str
     pronunciation: Optional[str] = None
-    image: Optional[str] = None  # URL publique Vercel Blob, lorsque disponible.
+    image: Optional[str] = None # Contient désormais l'image en Base64 (Data URI) ou l'URL originale si non convertie
     
     # Nouveaux champs optionnels
     explanation_it: Optional[str] = None
