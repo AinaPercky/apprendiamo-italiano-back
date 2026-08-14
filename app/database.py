@@ -25,6 +25,8 @@ def _normalize_db_url(url: str) -> tuple[str, dict]:
     parsed = urlsplit(url)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
     ssl_mode = query.pop("sslmode", "")
+    # Options libpq présentes dans l’URL Neon, mais non reconnues par asyncpg.
+    query.pop("channel_binding", None)
     connect_args = {"ssl": True} if ssl_mode.lower() in {"require", "verify-ca", "verify-full"} else {}
     normalized_url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
     return normalized_url, connect_args
