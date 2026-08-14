@@ -117,13 +117,48 @@ def _extension_for(content_type: str, source_name: Optional[str] = None) -> str:
     return extension or ".bin"
 
 
-def _validated_content_type(content_type: str, *, source: str) -> str:
-    normalised = content_type.split(";", 1)[0].strip().lower()
-    if normalised not in IMAGE_CONTENT_TYPES:
-        raise BlobStorageError(
-            f"Type de fichier image non autorisé pour {source}: {normalised or 'inconnu'}"
-        )
-    return normalised
+def _normalise_content_type(content_type: str) -> str:
+    return content_type.split(";", 1)[0].strip().lower()
+
+
+def _sniff_image_content_type(payload: bytes) -> Optional[str]:
+    """Détecte les formats image acceptés lorsque l’ancien MIME est générique."""
+    if payload.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if payload.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if payload.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if len(payload) >= 12 and payload[:4] == b"RIFF" and payload[8:12] == b"WEBP":
+        return "image/webp"
+
+    # Les SVG étaient déjà acceptés explicitement ; cette détection est
+    # réservée aux anciens flux binaires à MIME générique.
+    prefix = payload.lstrip()[:4096].lower()
+    if prefix.startswith(b"<svg") or b"<svg" in prefix[:512]:
+        return "image/svg+xml"
+    return None
+
+
+def _resolve_image_content_type(
+    declared_content_type: str,
+    payload: bytes,
+    *,
+    source: str,
+) -> str:
+    """Valide le MIME déclaré ou déduit les anciens flux octet-stream."""
+    normalised = _normalise_content_type(declared_content_type)
+    if normalised in IMAGE_CONTENT_TYPES:
+        return normalised
+
+    generic_types = {"", "application/octet-stream", "binary/octet-stream", "application/binary"}
+    detected = _sniff_image_content_type(payload) if normalised in generic_types else None
+    if detected:
+        return detected
+
+    raise BlobStorageError(
+        f"Type de fichier image non autorisé pour {source}: {normalised or 'inconnu'}"
+    )
 
 
 def decode_image_source(source: str) -> tuple[bytes, str, Optional[str]]:
@@ -132,13 +167,17 @@ def decode_image_source(source: str) -> tuple[bytes, str, Optional[str]]:
         match = re.fullmatch(r"data:([^;,]+);base64,([A-Za-z0-9+/=\s]+)", source, flags=re.DOTALL)
         if not match:
             raise BlobStorageError("La Data URI de l’image est invalide.")
-        content_type = _validated_content_type(match.group(1), source="Data URI")
         try:
             payload = base64.b64decode(match.group(2), validate=False)
         except ValueError as exc:
             raise BlobStorageError("Le contenu Base64 de l’image est invalide.") from exc
         if not payload or len(payload) > MAX_SERVER_UPLOAD_BYTES:
             raise BlobStorageError("La taille de l’image dépasse la limite d’upload serveur.")
+        content_type = _resolve_image_content_type(
+            match.group(1),
+            payload,
+            source="Data URI",
+        )
         return payload, content_type, None
 
     parsed = urlparse(source)
@@ -156,7 +195,7 @@ def decode_image_source(source: str) -> tuple[bytes, str, Optional[str]]:
     except requests.RequestException as exc:
         raise BlobStorageError(f"Impossible de récupérer l’image distante : {exc}") from exc
 
-    content_type = _validated_content_type(response.headers.get("Content-Type", ""), source=source)
+    declared_content_type = response.headers.get("Content-Type", "")
     content = bytearray()
     for chunk in response.iter_content(chunk_size=64 * 1024):
         if not chunk:
@@ -167,8 +206,14 @@ def decode_image_source(source: str) -> tuple[bytes, str, Optional[str]]:
 
     if not content:
         raise BlobStorageError("L’image distante est vide.")
+    payload = bytes(content)
+    content_type = _resolve_image_content_type(
+        declared_content_type,
+        payload,
+        source=source,
+    )
     original_filename = os.path.basename(parsed.path) or None
-    return bytes(content), content_type, original_filename
+    return payload, content_type, original_filename
 
 
 def prepare_card_image(source: str) -> tuple[bytes, str, Optional[str], str]:

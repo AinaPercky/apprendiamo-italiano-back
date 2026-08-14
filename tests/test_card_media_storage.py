@@ -21,6 +21,16 @@ class CardMediaStorageTests(unittest.TestCase):
         self.assertIsNone(filename)
         self.assertEqual(checksum, hashlib.sha256(payload).hexdigest())
 
+    def test_prepare_octet_stream_data_uri_by_image_signature(self):
+        payload = b"\x89PNG\r\n\x1a\nlegacy-png"
+        source = "data:application/octet-stream;base64," + base64.b64encode(payload).decode("ascii")
+        decoded, content_type, filename, checksum = blob_storage.prepare_card_image(source)
+
+        self.assertEqual(decoded, payload)
+        self.assertEqual(content_type, "image/png")
+        self.assertIsNone(filename)
+        self.assertEqual(checksum, hashlib.sha256(payload).hexdigest())
+
     def test_prepare_rejects_non_image_data_uri(self):
         source = "data:text/plain;base64," + base64.b64encode(b"not an image").decode("ascii")
         with self.assertRaises(blob_storage.BlobStorageError):
