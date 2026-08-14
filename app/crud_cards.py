@@ -1,7 +1,7 @@
 # app/crud_cards.py
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, or_, and_, func
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from . import models, schemas
 import uuid
 from typing import List, Optional
@@ -50,7 +50,9 @@ async def create_deck(db: AsyncSession, deck: schemas.DeckCreate) -> models.Deck
 
 
 async def get_decks(db: AsyncSession, skip: int = 0, limit: int = 10, search: Optional[str] = None) -> List[models.Deck]:
-    stmt = select(models.Deck).options(joinedload(models.Deck.cards)).offset(skip).limit(limit)
+    stmt = select(models.Deck).options(
+        joinedload(models.Deck.cards).selectinload(models.Card.audio)
+    ).offset(skip).limit(limit)
     if search:
         stmt = stmt.where(models.Deck.name.ilike(f"%{search}%"))
     result = await db.execute(stmt)
@@ -58,7 +60,9 @@ async def get_decks(db: AsyncSession, skip: int = 0, limit: int = 10, search: Op
 
 
 async def get_deck(db: AsyncSession, deck_pk: int) -> Optional[models.Deck]:
-    stmt = select(models.Deck).options(joinedload(models.Deck.cards)).where(models.Deck.deck_pk == deck_pk)
+    stmt = select(models.Deck).options(
+        joinedload(models.Deck.cards).selectinload(models.Card.audio)
+    ).where(models.Deck.deck_pk == deck_pk)
     result = await db.execute(stmt)
     return result.unique().scalar_one_or_none()
 
@@ -256,8 +260,7 @@ async def get_cards(
     due_only: bool = False,
 ) -> List[models.Card]:
     # On commence par sélectionner les cartes
-    stmt = select(models.Card)
-
+    stmt = select(models.Card).options(selectinload(models.Card.audio))
     # JOINTURE IMPORTANTE : Si on filtre par deck, on passe par la table d'association
     if deck_pk:
         stmt = stmt.join(models.deck_cards, models.Card.card_pk == models.deck_cards.c.card_pk)\
@@ -291,7 +294,11 @@ async def get_cards(
 
 
 async def get_card(db: AsyncSession, card_pk: int) -> Optional[models.Card]:
-    result = await db.execute(select(models.Card).where(models.Card.card_pk == card_pk))
+    result = await db.execute(
+        select(models.Card)
+        .options(selectinload(models.Card.audio))
+        .where(models.Card.card_pk == card_pk)
+    )
     return result.scalar_one_or_none()
 
 
