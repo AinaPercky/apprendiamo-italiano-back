@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "app/main.py": {
+    "**/*.py": {
       "excludeFiles": "{backup*.sql,backup*.dump,db_backups/**,alembic/**,**/*.md}"
     }
   }
