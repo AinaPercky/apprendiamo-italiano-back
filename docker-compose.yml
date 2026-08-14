@@ -23,9 +23,10 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:admin@db:5432/apprendiamo_db
-      DB_MAX_RETRIES: "30"
-      DB_RETRY_DELAY: "2"
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://postgres:admin@db:5432/apprendiamo_db}
+      DB_MAX_RETRIES: ${DB_MAX_RETRIES:-30}
+      DB_RETRY_DELAY: ${DB_RETRY_DELAY:-2}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
     ports:
       - "8000:8000"
     volumes:

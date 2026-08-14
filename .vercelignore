@@ -1,7 +1,9 @@
 # Sauvegardes déjà restaurées et validées dans Neon : inutiles au runtime.
 backup*.sql
 backup*.dump
+backups/
 db_backups/
+*.dump
 
 # Fichiers de développement sans usage à l’exécution.
 alembic/
