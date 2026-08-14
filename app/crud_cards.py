@@ -417,7 +417,19 @@ async def migrate_legacy_card_images(db: AsyncSession, limit: int = 5) -> dict:
         (
             await db.scalars(
                 select(models.Card.card_pk)
-                .where(models.Card.image.is_not(None), models.Card.image != "")
+                .outerjoin(
+                    models.CardMedia,
+                    and_(
+                        models.CardMedia.card_pk == models.Card.card_pk,
+                        models.CardMedia.kind == "image",
+                        models.CardMedia.is_primary.is_(True),
+                    ),
+                )
+                .where(
+                    models.Card.image.is_not(None),
+                    models.Card.image != "",
+                    models.CardMedia.media_pk.is_(None),
+                )
                 .order_by(models.Card.card_pk)
                 .limit(safe_limit)
             )
