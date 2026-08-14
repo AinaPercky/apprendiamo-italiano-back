@@ -3,18 +3,25 @@
 ## 🔐 Authentification
 
 Tous les endpoints protégés nécessitent un token Bearer dans le header:
+
 ```
 Authorization: Bearer <access_token>
 ```
+
+Variable d'environnement: (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& d:\dev\apprendiamo-italiano-backend\.venv\Scripts\Activate.ps1)
+
+uvicorn app.main:app --reload
 
 ---
 
 ## 👤 Endpoints Utilisateur
 
 ### POST /api/users/register
+
 Créer un nouveau compte utilisateur
 
 **Body**:
+
 ```json
 {
   "email": "user@example.com",
@@ -24,6 +31,7 @@ Créer un nouveau compte utilisateur
 ```
 
 **Response** (201):
+
 ```json
 {
   "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
@@ -45,9 +53,11 @@ Créer un nouveau compte utilisateur
 ---
 
 ### POST /api/users/login
+
 Se connecter avec email et mot de passe
 
 **Body**:
+
 ```json
 {
   "email": "user@example.com",
@@ -56,6 +66,7 @@ Se connecter avec email et mot de passe
 ```
 
 **Response** (200):
+
 ```json
 {
   "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
@@ -67,9 +78,11 @@ Se connecter avec email et mot de passe
 ---
 
 ### POST /api/users/google-login
+
 Connexion/Inscription via Google OAuth
 
 **Body**:
+
 ```json
 {
   "google_id": "1234567890",
@@ -81,6 +94,7 @@ Connexion/Inscription via Google OAuth
 ```
 
 **Response** (200):
+
 ```json
 {
   "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
@@ -92,11 +106,13 @@ Connexion/Inscription via Google OAuth
 ---
 
 ### GET /api/users/me
+
 Récupérer les informations de l'utilisateur connecté
 
 **Headers**: `Authorization: Bearer <token>`
 
 **Response** (200):
+
 ```json
 {
   "user_pk": 1,
@@ -120,11 +136,13 @@ Récupérer les informations de l'utilisateur connecté
 ---
 
 ### PUT /api/users/me
+
 Mettre à jour le profil de l'utilisateur
 
 **Headers**: `Authorization: Bearer <token>`
 
 **Body**:
+
 ```json
 {
   "first_name": "John",
@@ -135,6 +153,7 @@ Mettre à jour le profil de l'utilisateur
 ```
 
 **Response** (200):
+
 ```json
 {
   "user_pk": 1,
@@ -147,11 +166,13 @@ Mettre à jour le profil de l'utilisateur
 ---
 
 ### GET /api/users/stats
+
 Récupérer les statistiques globales de l'utilisateur
 
 **Headers**: `Authorization: Bearer <token>`
 
 **Response** (200):
+
 ```json
 {
   "total_score": 1250,
@@ -168,9 +189,11 @@ Récupérer les statistiques globales de l'utilisateur
 ## 📚 Endpoints Decks
 
 ### POST /decks/
+
 Créer un nouveau deck
 
 **Body**:
+
 ```json
 {
   "name": "Vocabulaire de base",
@@ -179,6 +202,7 @@ Créer un nouveau deck
 ```
 
 **Response** (200):
+
 ```json
 {
   "deck_pk": 1,
@@ -193,14 +217,17 @@ Créer un nouveau deck
 ---
 
 ### GET /decks/
+
 Récupérer la liste des decks
 
 **Query Parameters**:
+
 - `skip` (int, default=0): Nombre d'éléments à sauter
 - `limit` (int, default=10): Nombre maximum d'éléments
 - `search` (string, optional): Recherche par nom
 
 **Response** (200):
+
 ```json
 [
   {
@@ -217,9 +244,11 @@ Récupérer la liste des decks
 ---
 
 ### GET /decks/{deck_pk}
+
 Récupérer les détails d'un deck
 
 **Response** (200):
+
 ```json
 {
   "deck_pk": 1,
@@ -248,9 +277,11 @@ Récupérer les détails d'un deck
 ## 🃏 Endpoints Cartes
 
 ### POST /cards/
+
 Créer une nouvelle carte
 
 **Body**:
+
 ```json
 {
   "deck_pk": 1,
@@ -266,6 +297,7 @@ Créer une nouvelle carte
 ```
 
 **Response** (200):
+
 ```json
 {
   "card_pk": 1,
@@ -288,9 +320,11 @@ Créer une nouvelle carte
 ---
 
 ### GET /cards/
+
 Récupérer la liste des cartes
 
 **Query Parameters**:
+
 - `skip` (int, default=0)
 - `limit` (int, default=10)
 - `deck_pk` (int, optional): Filtrer par deck
@@ -299,6 +333,7 @@ Récupérer la liste des cartes
 - `due_only` (bool, default=false): Seulement les cartes à réviser
 
 **Response** (200):
+
 ```json
 [
   {
@@ -313,9 +348,11 @@ Récupérer la liste des cartes
 ---
 
 ### GET /cards/{card_pk}
+
 Récupérer les détails d'une carte
 
 **Response** (200):
+
 ```json
 {
   "card_pk": 1,
@@ -333,9 +370,11 @@ Récupérer les détails d'une carte
 ---
 
 ### PUT /cards/{card_pk}
+
 Mettre à jour une carte
 
 **Body**:
+
 ```json
 {
   "front": "Ciao (Updated)",
@@ -346,6 +385,7 @@ Mettre à jour une carte
 ```
 
 **Response** (200):
+
 ```json
 {
   "card_pk": 1,
@@ -357,9 +397,11 @@ Mettre à jour une carte
 ---
 
 ### DELETE /cards/{card_pk}
+
 Supprimer une carte
 
 **Response** (200):
+
 ```json
 {
   "detail": "Card deleted"
@@ -371,11 +413,13 @@ Supprimer une carte
 ## 📖 Endpoints Decks Utilisateur
 
 ### GET /api/users/decks
+
 Récupérer tous les decks de l'utilisateur avec statistiques
 
 **Headers**: `Authorization: Bearer <token>`
 
 **Response** (200):
+
 ```json
 [
   {
@@ -406,11 +450,13 @@ Récupérer tous les decks de l'utilisateur avec statistiques
 ---
 
 ### POST /api/users/decks/{deck_pk}
+
 Ajouter un deck à la bibliothèque de l'utilisateur
 
 **Headers**: `Authorization: Bearer <token>`
 
 **Response** (201):
+
 ```json
 {
   "user_deck_pk": 1,
@@ -427,11 +473,13 @@ Ajouter un deck à la bibliothèque de l'utilisateur
 ---
 
 ### DELETE /api/users/decks/{deck_pk}
+
 Retirer un deck de la bibliothèque
 
 **Headers**: `Authorization: Bearer <token>`
 
 **Response** (200):
+
 ```json
 {
   "detail": "Deck retiré avec succès"
@@ -443,11 +491,13 @@ Retirer un deck de la bibliothèque
 ## 🎯 Endpoints Scores
 
 ### POST /api/users/scores
+
 Enregistrer un score de quiz (déclenche l'algorithme Anki)
 
 **Headers**: `Authorization: Bearer <token>`
 
 **Body**:
+
 ```json
 {
   "deck_pk": 1,
@@ -460,6 +510,7 @@ Enregistrer un score de quiz (déclenche l'algorithme Anki)
 ```
 
 **Response** (201):
+
 ```json
 {
   "score_pk": 1,
@@ -475,6 +526,7 @@ Enregistrer un score de quiz (déclenche l'algorithme Anki)
 ```
 
 **Effets de bord**:
+
 1. Met à jour les champs Anki de la carte:
    - `easiness`: Ajusté selon la performance
    - `interval`: Calculé pour la prochaine révision
@@ -499,18 +551,22 @@ Enregistrer un score de quiz (déclenche l'algorithme Anki)
 ## 📊 Algorithme Anki
 
 ### Grades
+
 Le score est converti en grade Anki:
+
 - **Grade 0 (Again)**: score < 50 → Réinitialise la progression
 - **Grade 1 (Hard)**: 50 ≤ score < 75 → Progression lente
 - **Grade 2 (Good)**: 75 ≤ score < 90 → Progression normale
 - **Grade 3 (Easy)**: score ≥ 90 → Progression rapide
 
 ### Calcul de l'intervalle
+
 - **Première révision**: 1 jour
 - **Deuxième révision**: 6 jours
 - **Révisions suivantes**: `interval * easiness * multiplier`
 
 ### Facteur de facilité (Easiness)
+
 - Valeur initiale: 2.5
 - Minimum: 1.3
 - Maximum: 5.0
