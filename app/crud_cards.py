@@ -408,24 +408,31 @@ async def migrate_legacy_card_images(db: AsyncSession, limit: int = 5) -> dict:
     """Externalise un lot limité d’images historiques vers Vercel Blob.
 
     La fonction est idempotente : une image dont la référence primaire existe
-    déjà n’est pas rechargée. Les commits carte par carte permettent une reprise
-    sûre après timeout de Function ou erreur réseau.
+    déjà n’est pas rechargée. Les identifiants sont prélevés en premier, puis
+    chaque carte est rechargée après un commit ou un rollback afin d’éviter les
+    accès asynchrones à un objet SQLAlchemy expiré.
     """
     safe_limit = max(1, min(limit, 25))
-    candidates = (
-        await db.execute(
-            select(models.Card)
-            .options(selectinload(models.Card.media))
-            .where(models.Card.image.is_not(None), models.Card.image != "")
-            .order_by(models.Card.card_pk)
-            .limit(safe_limit)
-        )
-    ).scalars().all()
+    candidate_ids = list(
+        (
+            await db.scalars(
+                select(models.Card.card_pk)
+                .where(models.Card.image.is_not(None), models.Card.image != "")
+                .order_by(models.Card.card_pk)
+                .limit(safe_limit)
+            )
+        ).all()
+    )
 
     migrated = 0
     skipped = 0
     errors: list[dict[str, str | int]] = []
-    for card in candidates:
+    for card_pk in candidate_ids:
+        card = await _card_with_media(db, card_pk)
+        if not card or not card.image:
+            skipped += 1
+            continue
+
         existing_primary = next(
             (media for media in card.media if media.kind == "image" and media.is_primary),
             None,
@@ -444,8 +451,8 @@ async def migrate_legacy_card_images(db: AsyncSession, limit: int = 5) -> dict:
             migrated += 1
         except Exception as exc:
             await db.rollback()
-            logger.exception("Échec de migration média carte %s : %s", card.card_pk, exc)
-            errors.append({"card_pk": card.card_pk, "error": str(exc)[:180]})
+            logger.exception("Échec de migration média carte %s : %s", card_pk, exc)
+            errors.append({"card_pk": card_pk, "error": str(exc)[:180]})
 
     remaining = await db.scalar(
         select(models.Card.card_pk)
@@ -466,7 +473,7 @@ async def migrate_legacy_card_images(db: AsyncSession, limit: int = 5) -> dict:
         .limit(1)
     )
     return {
-        "processed": len(candidates),
+        "processed": len(candidate_ids),
         "migrated": migrated,
         "already_referenced": skipped,
         "next_card_pk": remaining,
