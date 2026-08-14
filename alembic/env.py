@@ -3,6 +3,7 @@ import os
 import sys
 import asyncio
 from logging.config import fileConfig
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 # AJOUTE TON PROJET AU PYTHONPATH (c’est ÇA qui manquait sous Windows)
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -19,12 +20,25 @@ from app.models import Base  # ← maintenant ça trouve 'app'
 # this is the Alembic Config object
 config = context.config
 db_url = os.getenv("DATABASE_URL")
+DB_CONNECT_ARGS: dict = {}
+
+
 def _normalize_db_url(url: str) -> str:
+    """Adapte les paramètres Neon/libpq au pilote asyncpg d’Alembic."""
+    global DB_CONNECT_ARGS
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
     if url.startswith("postgresql://") and "+asyncpg" not in url:
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    return url
+
+    parsed = urlsplit(url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    ssl_mode = query.pop("sslmode", "")
+    query.pop("channel_binding", None)
+    DB_CONNECT_ARGS = {"ssl": True} if ssl_mode.lower() in {"require", "verify-ca", "verify-full"} else {}
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
+
+
 if db_url:
     config.set_main_option("sqlalchemy.url", _normalize_db_url(db_url))
 
@@ -75,6 +89,7 @@ async def run_async_migrations() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=DB_CONNECT_ARGS,
     )
 
     async with connectable.connect() as connection:
