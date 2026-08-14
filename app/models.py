@@ -1,4 +1,19 @@
-from sqlalchemy import Column, ForeignKey, Integer, Text,Float, TIMESTAMP, String, inspect, Boolean, DateTime, Table
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Table,
+    Text,
+    TIMESTAMP,
+    Float,
+    inspect,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -67,11 +82,65 @@ class Card(Base):
 
     # Relation Many-to-Many
     decks = relationship("Deck", secondary=deck_cards, back_populates="cards")
+    media = relationship(
+        "CardMedia",
+        back_populates="card",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     
     # Ancienne relation (pour compatibilité, pointe vers le deck "principal" si deck_pk est rempli)
     # Note: cela peut être source de confusion si le deck_pk n'est pas synchronisé avec deck_cards
     # deck = relationship("Deck", back_populates="cards") # On commente ou retire car conflit avec 'decks' et 'cards'
 
+
+class CardMedia(Base):
+    """Référence d’un média de carte conservé hors de PostgreSQL.
+
+    Les octets résident dans Vercel Blob. Cette table conserve uniquement la
+    référence de livraison et les métadonnées nécessaires aux images et aux
+    futurs fichiers audio MP3.
+    """
+    __tablename__ = "card_media"
+    __table_args__ = (
+        CheckConstraint("kind IN ('image', 'audio')", name="ck_card_media_kind"),
+        Index("ix_card_media_card_kind", "card_pk", "kind"),
+        Index(
+            "uq_card_media_primary_kind",
+            "card_pk",
+            "kind",
+            unique=True,
+            postgresql_where=text("is_primary"),
+        ),
+        Index("ix_card_media_sha256", "sha256"),
+    )
+
+    media_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    card_pk = Column(
+        Integer,
+        ForeignKey("cards.card_pk", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    kind = Column(String(16), nullable=False, index=True)
+    storage_provider = Column(String(32), nullable=False, default="vercel_blob")
+    # Une même image Blob peut être référencée par plusieurs cartes.
+    url = Column(Text, nullable=False)
+    pathname = Column(Text, nullable=False)
+    content_type = Column(String(127), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    original_filename = Column(String(255), nullable=True)
+    is_primary = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    card = relationship("Card", back_populates="media")
 
 
 class User(Base):

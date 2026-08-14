@@ -1,7 +1,10 @@
 # app/api/endpoints_cards.py
-from fastapi import APIRouter, Depends, Query, HTTPException
+import os
+import secrets
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
 
 from .. import crud_cards, crud_decks, schemas
 from ..database import get_db
@@ -44,6 +47,22 @@ async def batch_import_cards(cards: List[schemas.CardCreate], db: AsyncSession =
     - Gère les liens Many-to-Many avec les decks.
     """
     return await crud_cards.batch_upsert_cards(db, cards)
+
+@router.post("/cards/media/migrate", include_in_schema=False)
+async def migrate_card_media(
+    limit: int = Query(5, ge=1, le=25),
+    x_media_migration_token: Optional[str] = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Exécute un lot d’externalisation, réservé à l’opérateur de migration."""
+    expected_token = os.getenv("MEDIA_MIGRATION_TOKEN", "")
+    if not expected_token or not x_media_migration_token or not secrets.compare_digest(
+        x_media_migration_token, expected_token
+    ):
+        # Ne révèle pas l’existence de cette opération interne.
+        raise HTTPException(status_code=404, detail="Not found")
+    return await crud_cards.migrate_legacy_card_images(db, limit=limit)
+
 
 @router.post("/cards/", response_model=schemas.Card)
 async def create_card(card: schemas.CardCreate, db: AsyncSession = Depends(get_db)):
