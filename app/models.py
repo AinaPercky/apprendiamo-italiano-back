@@ -67,11 +67,53 @@ class Card(Base):
 
     # Relation Many-to-Many
     decks = relationship("Deck", secondary=deck_cards, back_populates="cards")
+    audio = relationship(
+        "CardAudio",
+        back_populates="card",
+        uselist=False,
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
     
     # Ancienne relation (pour compatibilité, pointe vers le deck "principal" si deck_pk est rempli)
     # Note: cela peut être source de confusion si le deck_pk n'est pas synchronisé avec deck_cards
     # deck = relationship("Deck", back_populates="cards") # On commente ou retire car conflit avec 'decks' et 'cards'
 
+
+
+class CardAudio(Base):
+    """Prononciation temporairement stockée en Data URI/base64 dans PostgreSQL.
+
+    Le champ ``audio_data`` pourra être remplacé ultérieurement par une URL
+    externe sans changer la relation entre la carte et son fichier audio.
+    """
+    __tablename__ = "card_audio"
+
+    audio_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    card_pk = Column(
+        Integer,
+        ForeignKey("cards.card_pk", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    filename = Column(String(255), nullable=True)
+    content_type = Column(String(64), nullable=False, default="audio/mpeg")
+    size_bytes = Column(Integer, nullable=False)
+    audio_data = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    card = relationship("Card", back_populates="audio")
+
+    @property
+    def audio_url(self) -> str:
+        return f"/cards/{self.card_pk}/audio"
 
 
 class User(Base):

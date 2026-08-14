@@ -69,6 +69,18 @@ class CardCreate(CardBase):
     next_review: datetime
 
 
+class CardAudioPublic(BaseModel):
+    """Métadonnées publiques d’une prononciation liée à une carte."""
+    audio_pk: int
+    card_pk: int
+    filename: Optional[str] = None
+    content_type: str
+    size_bytes: int
+    audio_url: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class Card(CardBase):
     card_pk: int
     id_json: str
@@ -80,6 +92,7 @@ class Card(CardBase):
     easiness: float = 2.5
     interval: int = 0
     consecutive_correct: int = 0
+    audio: Optional[CardAudioPublic] = None
 
     model_config = {"from_attributes": True}
 
