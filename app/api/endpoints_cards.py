@@ -1,12 +1,9 @@
 # app/api/endpoints_cards.py
-import os
-import secrets
-from typing import List, Optional
-
-from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List
 
-from .. import blob_storage, crud_cards, crud_decks, schemas
+from .. import crud_cards, crud_decks, schemas
 from ..database import get_db
 
 router = APIRouter(
@@ -47,32 +44,6 @@ async def batch_import_cards(cards: List[schemas.CardCreate], db: AsyncSession =
     - Gère les liens Many-to-Many avec les decks.
     """
     return await crud_cards.batch_upsert_cards(db, cards)
-
-@router.post("/cards/media/migrate", include_in_schema=False)
-async def migrate_card_media(
-    limit: int = Query(5, ge=1, le=25),
-    x_media_migration_token: Optional[str] = Header(default=None),
-    media_migration_token: Optional[str] = Form(default=None),
-    request: Request = None,
-    db: AsyncSession = Depends(get_db),
-):
-    """Exécute un lot d’externalisation, réservé à l’opérateur de migration.
-
-    Le champ de formulaire est destiné au déclenchement ponctuel inter-origines
-    depuis le tableau Vercel, sans placer le secret dans une URL ni ouvrir CORS.
-    """
-    expected_token = os.getenv("MEDIA_MIGRATION_TOKEN", "")
-    supplied_token = x_media_migration_token or media_migration_token
-    if not expected_token or not supplied_token or not secrets.compare_digest(
-        supplied_token, expected_token
-    ):
-        # Ne révèle pas l’existence de cette opération interne.
-        raise HTTPException(status_code=404, detail="Not found")
-    with blob_storage.vercel_oidc_request_context(
-        request.headers.get("x-vercel-oidc-token") if request else None
-    ):
-        return await crud_cards.migrate_legacy_card_images(db, limit=limit)
-
 
 @router.post("/cards/", response_model=schemas.Card)
 async def create_card(card: schemas.CardCreate, db: AsyncSession = Depends(get_db)):
