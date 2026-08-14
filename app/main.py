@@ -1,4 +1,5 @@
 import logging
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -26,12 +27,18 @@ app = FastAPI(
 # -----------------------
 # CORS Middleware
 # -----------------------
-origins = [
+local_origins = {
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:8081",
     "http://127.0.0.1:8081",
-]
+}
+production_origins = {
+    origin.strip().rstrip("/")
+    for origin in os.getenv("CORS_ORIGINS", "").split(",")
+    if origin.strip()
+}
+origins = sorted(local_origins | production_origins)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
