@@ -118,7 +118,13 @@ def _extension_for(content_type: str, source_name: Optional[str] = None) -> str:
 
 
 def _normalise_content_type(content_type: str) -> str:
-    return content_type.split(";", 1)[0].strip().lower()
+    normalised = content_type.split(";", 1)[0].strip().lower()
+    aliases = {
+        "image/jpg": "image/jpeg",
+        "image/pjpeg": "image/jpeg",
+        "image/x-png": "image/png",
+    }
+    return aliases.get(normalised, normalised)
 
 
 def _sniff_image_content_type(payload: bytes) -> Optional[str]:
