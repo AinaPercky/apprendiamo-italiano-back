@@ -3,8 +3,10 @@ from fastapi import APIRouter, Depends, Query, HTTPException, File, UploadFile, 
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
-from .. import crud_cards, crud_decks, crud_card_audio, schemas
+from .. import crud_cards, crud_decks, crud_card_audio, crud_public_card_qr, schemas
 from ..database import get_db
+from ..security import get_current_active_user
+from .. import models
 
 router = APIRouter(
     prefix="", 
@@ -98,6 +100,47 @@ async def remove_card_audio(card_pk: int, db: AsyncSession = Depends(get_db)):
     if not deleted:
         raise HTTPException(status_code=404, detail="Audio pronunciation not found")
     return {"detail": "Card audio deleted"}
+
+
+@router.post("/cards/public-qr-links", response_model=List[schemas.CardPublicQRLink])
+async def create_public_qr_links(
+    payload: schemas.CardPublicQRLinkRequest,
+    db: AsyncSession = Depends(get_db),
+    _current_user: models.User = Depends(get_current_active_user),
+):
+    """Crée des capacités URL opaques et signées pour l'impression de QR codes."""
+    try:
+        return await crud_public_card_qr.create_public_qr_links(db, payload.card_pks)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/public/cards/qr/{token}/{signature}", response_model=schemas.CardPublicQRView)
+async def read_public_qr_card(
+    token: str,
+    signature: str,
+    db: AsyncSession = Depends(get_db),
+):
+    card = await crud_public_card_qr.get_public_card_from_qr(db, token, signature)
+    if not card:
+        raise HTTPException(status_code=404, detail="Lien QR invalide ou révoqué")
+    return crud_public_card_qr.public_card_payload(card, token, signature)
+
+
+@router.get("/public/cards/qr/{token}/{signature}/audio")
+async def read_public_qr_card_audio(
+    token: str,
+    signature: str,
+    db: AsyncSession = Depends(get_db),
+):
+    card = await crud_public_card_qr.get_public_card_from_qr(db, token, signature)
+    if not card or not card.audio:
+        raise HTTPException(status_code=404, detail="Prononciation introuvable")
+    try:
+        payload, content_type = crud_card_audio._decode_audio_data_uri(card.audio.audio_data), card.audio.content_type
+    except crud_card_audio.CardAudioValidationError as exc:
+        raise HTTPException(status_code=500, detail="Prononciation invalide") from exc
+    return Response(content=payload, media_type=content_type)
 
 
 @router.get("/cards/{card_pk}", response_model=schemas.Card)

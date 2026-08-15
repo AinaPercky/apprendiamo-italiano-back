@@ -116,6 +116,29 @@ class CardAudio(Base):
         return f"/cards/{self.card_pk}/audio"
 
 
+class CardPublicQRLink(Base):
+    """Lien de consultation publique révoquable pour une flashcard imprimée.
+
+    Le jeton brut n'est jamais stocké : seule son empreinte SHA-256 est
+    conservée. La signature HMAC présente dans l'URL est contrôlée avant toute
+    recherche en base.
+    """
+    __tablename__ = "card_public_qr_links"
+
+    qr_link_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    card_pk = Column(
+        Integer,
+        ForeignKey("cards.card_pk", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+    card = relationship("Card")
+
+
 class User(Base):
     __tablename__ = "users"
 
