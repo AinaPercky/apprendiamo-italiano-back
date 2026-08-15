@@ -97,6 +97,22 @@ class Card(CardBase):
     model_config = {"from_attributes": True}
 
 
+class CardPublicQRLinkRequest(BaseModel):
+    card_pks: List[int] = Field(..., min_length=1, max_length=1000)
+
+
+class CardPublicQRLink(BaseModel):
+    card_pk: int
+    token: str
+    signature: str
+
+
+class CardPublicQRView(CardBase):
+    """Détails accessibles uniquement après validation du lien QR signé."""
+    audio_url: Optional[str] = None
+    audio_filename: Optional[str] = None
+
+
 # Schéma Deck avec cards (à utiliser quand les cards sont explicitement chargées)
 class Deck(DeckBase):
     deck_pk: int
@@ -414,4 +430,3 @@ class CardPerformanceResponse(BaseModel):
             
         # 3. Dernière réponse incorrecte (Anki == 0)
         return "Non maîtrisée"
-
