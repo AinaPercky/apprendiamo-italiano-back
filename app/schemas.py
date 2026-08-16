@@ -430,3 +430,95 @@ class CardPerformanceResponse(BaseModel):
             
         # 3. Dernière réponse incorrecte (Anki == 0)
         return "Non maîtrisée"
+
+
+# ============================================================================
+# CONJUGAISONS ITALIENNES
+# ============================================================================
+class ItalianConjugationFormInput(BaseModel):
+    person_order: int = Field(..., ge=0, le=6)
+    person_label: Optional[str] = Field(default=None, max_length=48)
+    form_text: str = Field(..., min_length=1)
+    raw_line: Optional[str] = None
+
+
+class ItalianConjugationBlockInput(BaseModel):
+    mood: str = Field(..., min_length=1, max_length=64)
+    tense: str = Field(..., min_length=1, max_length=80)
+    mood_order: int = Field(default=99, ge=0)
+    tense_order: int = Field(default=99, ge=0)
+    raw_italian: str = ""
+    raw_portuguese: Optional[str] = None
+    is_featured: bool = False
+    forms: List[ItalianConjugationFormInput] = Field(default_factory=list)
+
+
+class ItalianVerbCreate(BaseModel):
+    infinitive: str = Field(..., min_length=1, max_length=160)
+    source_record_id: Optional[str] = None
+    conjugations: List[ItalianConjugationBlockInput] = Field(default_factory=list)
+
+
+class ItalianVerbUpdate(BaseModel):
+    infinitive: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    conjugations: Optional[List[ItalianConjugationBlockInput]] = None
+
+
+class ItalianConjugationFormOut(ItalianConjugationFormInput):
+    form_pk: int
+    model_config = {"from_attributes": True}
+
+
+class ItalianConjugationBlockOut(BaseModel):
+    conjugation_pk: int
+    mood: str
+    tense: str
+    mood_order: int
+    tense_order: int
+    raw_italian: str
+    raw_portuguese: Optional[str] = None
+    is_featured: bool
+    forms: List[ItalianConjugationFormOut] = Field(default_factory=list)
+    model_config = {"from_attributes": True}
+
+
+class ItalianVerbListItem(BaseModel):
+    verb_pk: int
+    infinitive: str
+    source_name: str
+    conjugation_count: int
+
+
+class ItalianVerbDetail(BaseModel):
+    verb_pk: int
+    infinitive: str
+    source_record_id: Optional[str] = None
+    source_name: str
+    source_url: str
+    source_license: str
+    conjugations: List[ItalianConjugationBlockOut] = Field(default_factory=list)
+
+
+class ItalianConjugationSearchResult(BaseModel):
+    infinitive: str
+    mood: str
+    tense: str
+    person_label: Optional[str] = None
+    form_text: str
+
+
+class ItalianConjugationMetadata(BaseModel):
+    moods: List[str]
+    tenses: List[dict]
+
+
+class ItalianConjugationImportReport(BaseModel):
+    source_name: str
+    source_license: str
+    source_checksum: str
+    verbs_processed: int
+    verbs_created: int
+    verbs_updated: int
+    conjugations_processed: int
+    forms_processed: int
+    skipped_records: int
