@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, Text,Float, TIMESTAMP, String, inspect, Boolean, DateTime, Table
+from sqlalchemy import Column, ForeignKey, Integer, Text,Float, TIMESTAMP, String, inspect, Boolean, DateTime, Table, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -334,3 +334,77 @@ class QuizSession(Base):
     # Relations
     user = relationship("User")
     deck = relationship("Deck")
+
+
+# ============================================================================
+# CONJUGAISONS ITALIENNES — corpus local, sans service externe à l’exécution
+# ============================================================================
+class ItalianVerb(Base):
+    __tablename__ = "italian_verbs"
+
+    verb_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    infinitive = Column(String(160), nullable=False, unique=True, index=True)
+    normalized_infinitive = Column(String(160), nullable=False, unique=True, index=True)
+    source_record_id = Column(String(64), nullable=True)
+    source_name = Column(String(160), nullable=False, default="leandrobhbr/coniugazione")
+    source_url = Column(Text, nullable=False)
+    source_license = Column(String(32), nullable=False, default="MIT")
+    source_checksum = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    conjugations = relationship(
+        "ItalianConjugation",
+        back_populates="verb",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class ItalianConjugation(Base):
+    __tablename__ = "italian_conjugations"
+    __table_args__ = (
+        UniqueConstraint("verb_pk", "mood", "tense", name="uq_italian_conjugation_verb_mood_tense"),
+    )
+
+    conjugation_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    verb_pk = Column(Integer, ForeignKey("italian_verbs.verb_pk", ondelete="CASCADE"), nullable=False, index=True)
+    mood = Column(String(64), nullable=False, index=True)
+    tense = Column(String(80), nullable=False, index=True)
+    mood_order = Column(Integer, nullable=False, default=99)
+    tense_order = Column(Integer, nullable=False, default=99)
+    source_conjugation_id = Column(String(64), nullable=True)
+    raw_italian = Column(Text, nullable=False)
+    raw_portuguese = Column(Text, nullable=True)
+    is_featured = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    verb = relationship("ItalianVerb", back_populates="conjugations")
+    forms = relationship(
+        "ItalianConjugationForm",
+        back_populates="conjugation",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class ItalianConjugationForm(Base):
+    __tablename__ = "italian_conjugation_forms"
+    __table_args__ = (
+        UniqueConstraint("conjugation_pk", "person_order", name="uq_italian_conjugation_form_position"),
+    )
+
+    form_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    conjugation_pk = Column(
+        Integer,
+        ForeignKey("italian_conjugations.conjugation_pk", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    person_order = Column(Integer, nullable=False)
+    person_label = Column(String(48), nullable=True)
+    form_text = Column(Text, nullable=False, index=True)
+    raw_line = Column(Text, nullable=True)
+
+    conjugation = relationship("ItalianConjugation", back_populates="forms")

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .database import lifespan
-from .api import endpoints_cards, endpoints_audios, endpoints_users, endpoints_quiz
+from .api import endpoints_cards, endpoints_audios, endpoints_users, endpoints_quiz, endpoints_conjugations
 from .crud_audios import AUDIO_DIR
 
 # -----------------------
@@ -59,6 +59,7 @@ app.include_router(endpoints_users.router)
 app.include_router(endpoints_cards.router)
 app.include_router(endpoints_audios.router)
 app.include_router(endpoints_quiz.router)
+app.include_router(endpoints_conjugations.router)
 
 # -----------------------
 # Route de base
