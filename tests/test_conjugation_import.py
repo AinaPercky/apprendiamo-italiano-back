@@ -56,6 +56,30 @@ class ConjugationCorpusTests(unittest.TestCase):
         self.assertEqual(accorgersi_passato[0]["form_text"], "mi sono accorto")
         self.assertEqual(accorgersi_passato[3]["form_text"], "ci siamo accorti")
 
+    def test_essere_participles_agree_for_plural_persons(self):
+        verbs, _, _ = parse_source_dataset(CORPUS_PATH)
+        essere_auxiliaries = {
+            "sono", "sei", "è", "siamo", "siete", "ero", "eri", "era", "eravamo", "eravate", "erano",
+            "sarò", "sarai", "sarà", "saremo", "sarete", "saranno", "fui", "fosti", "fu", "fummo", "foste", "furono",
+            "sia", "siano", "siate", "fossi", "fosse", "fossimo", "fossero", "sarei", "saresti", "sarebbe", "saremmo", "sareste", "sarebbero",
+        }
+        compound_tenses = {"Passato prossimo", "Trapassato prossimo", "Futuro anteriore", "Trapassato remoto", "Passato", "Trapassato"}
+        for verb in verbs:
+            for (mood, tense), block in verb["blocks"].items():
+                if tense not in compound_tenses:
+                    continue
+                for form in block["forms"]:
+                    if form["person_label"] not in {"noi", "voi", "loro"}:
+                        continue
+                    clean_tokens = form["form_text"].casefold().split()
+                    if not any(token in essere_auxiliaries for token in clean_tokens):
+                        continue
+                    alternatives = form["form_text"].split()[-1].casefold().split("/")
+                    self.assertTrue(
+                        any(alternative.endswith("i") for alternative in alternatives),
+                        f"Participe non accordé : {verb['infinitive']} / {mood} / {tense} / {form['form_text']}",
+                    )
+
     def test_non_reflexive_entries_do_not_expose_reflexive_infinitives(self):
         verbs, _, _ = parse_source_dataset(CORPUS_PATH)
         suspicious = []
