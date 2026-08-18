@@ -69,7 +69,8 @@ class ConjugationCorpusTests(unittest.TestCase):
                 if tense not in compound_tenses:
                     continue
                 for form in block["forms"]:
-                    if form["person_label"] not in {"noi", "voi", "loro"}:
+                    person = str(form["person_label"] or "").casefold().split()[-1]
+                    if person not in {"noi", "voi", "loro"}:
                         continue
                     clean_tokens = form["form_text"].casefold().split()
                     if not any(token in essere_auxiliaries for token in clean_tokens):
