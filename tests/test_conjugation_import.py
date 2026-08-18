@@ -27,10 +27,11 @@ class ConjugationCorpusTests(unittest.TestCase):
         expected = {
             "alzarsi", "lavarsi", "vestirsi", "svegliarsi", "chiamarsi",
             "divertirsi", "sentirsi", "sedersi", "addormentarsi", "pentirsi",
-            "accorgersi", "iscriversi", "servirsi", "sbrigarsi", "trasferirsi",
+            "accorgersi", "addirsi", "iscriversi", "servirsi", "sbrigarsi", "trasferirsi",
         }
         self.assertTrue(expected.issubset(by_infinitive))
-        self.assertGreaterEqual(sum(infinitive.endswith("si") for infinitive in by_infinitive), 35)
+        self.assertEqual(sum(infinitive.endswith("si") for infinitive in by_infinitive), 36)
+        self.assertNotIn("accorgere", by_infinitive)
 
         alzarsi = by_infinitive["alzarsi"]
         presente = alzarsi["blocks"][("Indicativo", "Presente")]["forms"]
@@ -42,10 +43,30 @@ class ConjugationCorpusTests(unittest.TestCase):
         self.assertEqual(pentirsi_presente[0]["form_text"], "mi pento")
         self.assertNotIn("mi mi", " ".join(form["form_text"] for form in pentirsi_presente))
 
+        for infinitive in ("arrabbiarsi", "vergognarsi", "addirsi"):
+            self.assertEqual(
+                by_infinitive[infinitive]["blocks"][("Infinito", "Presente")]["forms"][0]["form_text"],
+                infinitive,
+            )
+            presente_forms = by_infinitive[infinitive]["blocks"][("Indicativo", "Presente")]["forms"]
+            self.assertNotIn("mi mi", " ".join(form["form_text"] for form in presente_forms))
+
         accorgersi = by_infinitive["accorgersi"]
         accorgersi_passato = accorgersi["blocks"][("Indicativo", "Passato prossimo")]["forms"]
         self.assertEqual(accorgersi_passato[0]["form_text"], "mi sono accorto")
         self.assertEqual(accorgersi_passato[3]["form_text"], "ci siamo accorti")
+
+    def test_non_reflexive_entries_do_not_expose_reflexive_infinitives(self):
+        verbs, _, _ = parse_source_dataset(CORPUS_PATH)
+        suspicious = []
+        for verb in verbs:
+            infinitive = verb["infinitive"]
+            if infinitive.endswith("si"):
+                continue
+            block = verb["blocks"].get(("Infinito", "Presente"))
+            if block and any(form["form_text"].endswith("si") for form in block["forms"]):
+                suspicious.append((infinitive, [form["form_text"] for form in block["forms"]]))
+        self.assertEqual(suspicious, [])
 
     def test_frontend_categories_cover_base_and_reflexive_verbs(self):
         self.assertEqual(
@@ -66,7 +87,7 @@ class ConjugationCorpusTests(unittest.TestCase):
     def test_all_reflexive_verbs_have_a_grammar_category(self):
         verbs, _, _ = parse_source_dataset(CORPUS_PATH)
         reflexive_verbs = [verb["infinitive"] for verb in verbs if verb["infinitive"].endswith("rsi")]
-        self.assertEqual(len(reflexive_verbs), 35)
+        self.assertEqual(len(reflexive_verbs), 36)
         self.assertTrue(all(grammar_category_for_infinitive(verb) in GRAMMAR_CATEGORY_ORDER for verb in reflexive_verbs))
 
     def test_grammar_categories_classify_regular_and_irregular_verbs(self):

@@ -156,12 +156,12 @@ def main() -> None:
     by_verb = {item.get('verbi', '').strip().casefold(): item for item in data}
     added = []
     for base in REFLEXIVE_BASES:
-        base_item = by_verb.get(base)
-        if not base_item:
-            raise RuntimeError(f'Missing base verb in corpus: {base}')
         reflexive = base[:-2] + 'rsi' if base.endswith('re') else base + 'si'
         if reflexive in by_verb:
             continue
+        base_item = by_verb.get(base)
+        if not base_item:
+            raise RuntimeError(f'Missing base verb in corpus: {base}')
         item = {
             'id': f'reflexive-{base}',
             'verbi': reflexive,
