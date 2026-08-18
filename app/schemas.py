@@ -455,12 +455,14 @@ class ItalianConjugationBlockInput(BaseModel):
 
 class ItalianVerbCreate(BaseModel):
     infinitive: str = Field(..., min_length=1, max_length=160)
+    category: str = Field(default="Actions", min_length=1, max_length=64)
     source_record_id: Optional[str] = None
     conjugations: List[ItalianConjugationBlockInput] = Field(default_factory=list)
 
 
 class ItalianVerbUpdate(BaseModel):
     infinitive: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    category: Optional[str] = Field(default=None, min_length=1, max_length=64)
     conjugations: Optional[List[ItalianConjugationBlockInput]] = None
 
 
@@ -485,6 +487,7 @@ class ItalianConjugationBlockOut(BaseModel):
 class ItalianVerbListItem(BaseModel):
     verb_pk: int
     infinitive: str
+    category: str
     source_name: str
     conjugation_count: int
 
@@ -492,6 +495,7 @@ class ItalianVerbListItem(BaseModel):
 class ItalianVerbDetail(BaseModel):
     verb_pk: int
     infinitive: str
+    category: str
     source_record_id: Optional[str] = None
     source_name: str
     source_url: str
@@ -510,6 +514,8 @@ class ItalianConjugationSearchResult(BaseModel):
 class ItalianConjugationMetadata(BaseModel):
     moods: List[str]
     tenses: List[dict]
+    categories: List[str]
+    category_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class ItalianConjugationImportReport(BaseModel):

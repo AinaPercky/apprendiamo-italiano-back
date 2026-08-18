@@ -21,15 +21,17 @@ async def read_verbs(
     search: str | None = Query(default=None, max_length=160),
     mood: str | None = Query(default=None, max_length=64),
     tense: str | None = Query(default=None, max_length=80),
+    category: str | None = Query(default=None, max_length=64),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ):
-    verbs = await crud_conjugations.list_verbs(db, search, mood, tense, skip, limit)
+    verbs = await crud_conjugations.list_verbs(db, search, mood, tense, category, skip, limit)
     return [
         {
             "verb_pk": verb.verb_pk,
             "infinitive": verb.infinitive,
+            "category": verb.category,
             "source_name": verb.source_name,
             "conjugation_count": len(verb.conjugations),
         }

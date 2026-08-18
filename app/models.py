@@ -345,6 +345,7 @@ class ItalianVerb(Base):
     verb_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
     infinitive = Column(String(160), nullable=False, unique=True, index=True)
     normalized_infinitive = Column(String(160), nullable=False, unique=True, index=True)
+    category = Column(String(64), nullable=False, default="Actions", index=True)
     source_record_id = Column(String(64), nullable=True)
     source_name = Column(String(160), nullable=False, default="leandrobhbr/coniugazione")
     source_url = Column(Text, nullable=False)

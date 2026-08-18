@@ -1,5 +1,6 @@
 import unittest
 
+from app.conjugation_categories import CATEGORY_ORDER, category_for_infinitive
 from app.conjugation_corpus import CORPUS_PATH, clean_source_text, parse_person_forms, parse_source_dataset
 
 
@@ -45,3 +46,19 @@ class ConjugationCorpusTests(unittest.TestCase):
         accorgersi_passato = accorgersi["blocks"][("Indicativo", "Passato prossimo")]["forms"]
         self.assertEqual(accorgersi_passato[0]["form_text"], "mi sono accorto")
         self.assertEqual(accorgersi_passato[3]["form_text"], "ci siamo accorti")
+
+    def test_frontend_categories_cover_base_and_reflexive_verbs(self):
+        self.assertEqual(
+            list(CATEGORY_ORDER),
+            ["Auxiliaires", "Mouvement", "Communication", "Vie quotidienne", "Modaux", "Actions"],
+        )
+        expected = {
+            "essere": "Auxiliaires",
+            "andare": "Mouvement",
+            "chiamare": "Communication",
+            "alzarsi": "Vie quotidienne",
+            "potere": "Modaux",
+            "pentirsi": "Actions",
+        }
+        for infinitive, category in expected.items():
+            self.assertEqual(category_for_infinitive(infinitive), category)
