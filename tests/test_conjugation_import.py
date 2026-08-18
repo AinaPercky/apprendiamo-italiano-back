@@ -63,6 +63,12 @@ class ConjugationCorpusTests(unittest.TestCase):
         for infinitive, category in expected.items():
             self.assertEqual(category_for_infinitive(infinitive), category)
 
+    def test_all_reflexive_verbs_have_a_grammar_category(self):
+        verbs, _, _ = parse_source_dataset(CORPUS_PATH)
+        reflexive_verbs = [verb["infinitive"] for verb in verbs if verb["infinitive"].endswith("rsi")]
+        self.assertEqual(len(reflexive_verbs), 35)
+        self.assertTrue(all(grammar_category_for_infinitive(verb) in GRAMMAR_CATEGORY_ORDER for verb in reflexive_verbs))
+
     def test_grammar_categories_classify_regular_and_irregular_verbs(self):
         self.assertEqual(
             list(GRAMMAR_CATEGORY_ORDER),
