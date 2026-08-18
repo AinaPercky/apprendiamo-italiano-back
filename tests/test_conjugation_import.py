@@ -1,6 +1,6 @@
 import unittest
 
-from app.conjugation_categories import CATEGORY_ORDER, category_for_infinitive
+from app.conjugation_categories import CATEGORY_ORDER, GRAMMAR_CATEGORY_ORDER, category_for_infinitive, grammar_category_for_infinitive
 from app.conjugation_corpus import CORPUS_PATH, clean_source_text, parse_person_forms, parse_source_dataset
 
 
@@ -62,3 +62,26 @@ class ConjugationCorpusTests(unittest.TestCase):
         }
         for infinitive, category in expected.items():
             self.assertEqual(category_for_infinitive(infinitive), category)
+
+    def test_grammar_categories_classify_regular_and_irregular_verbs(self):
+        self.assertEqual(
+            list(GRAMMAR_CATEGORY_ORDER),
+            [
+                "Verbes en -are (réguliers)",
+                "Verbes en -ire (réguliers)",
+                "Verbes en -ere (réguliers)",
+                "Verbes irréguliers",
+            ],
+        )
+        expected = {
+            "parlare": "Verbes en -are (réguliers)",
+            "capire": "Verbes en -ire (réguliers)",
+            "scrivere": "Verbes en -ere (réguliers)",
+            "alzarsi": "Verbes en -are (réguliers)",
+            "dormirsi": "Verbes en -ire (réguliers)",
+            "essere": "Verbes irréguliers",
+            "andare": "Verbes irréguliers",
+            "pentirsi": "Verbes irréguliers",
+        }
+        for infinitive, category in expected.items():
+            self.assertEqual(grammar_category_for_infinitive(infinitive), category)

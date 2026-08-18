@@ -19,6 +19,27 @@ CATEGORY_ORDER = (
     "Actions",
 )
 
+GRAMMAR_CATEGORY_ORDER = (
+    "Verbes en -are (réguliers)",
+    "Verbes en -ire (réguliers)",
+    "Verbes en -ere (réguliers)",
+    "Verbes irréguliers",
+)
+
+# Verbes dont le radical, l’auxiliaire ou les formes principales ne suivent pas
+# le modèle régulier de leur terminaison. Les réflexifs héritent de cette liste.
+IRREGULAR_VERBS = frozenset(
+    {
+        "andare", "avere", "bere", "dare", "dire", "dovere", "essere", "fare",
+        "morire", "porre", "potere", "rimanere", "salire", "sapere", "scegliere",
+        "pentire", "accorgere", "offrire", "aprire", "coprire", "soffrire",
+        "sedere", "stare", "tenere", "trarre", "uscire", "venire", "volere",
+        "vedere", "vivere", "condurre", "produrre", "tradurre", "ridurre",
+        "cogliere", "togliere", "raccogliere", "piacere", "nascere", "conoscere",
+        "crescere", "scendere", "spegnere", "muovere", "nuocere", "valere",
+    }
+)
+
 CATEGORY_VERBS: OrderedDict[str, frozenset[str]] = OrderedDict(
     (
         (
@@ -84,18 +105,36 @@ _BASE_TO_CATEGORY = {
 }
 
 
+def base_infinitive(infinitive: str) -> str:
+    normalized = infinitive.strip().casefold()
+    # Corpus reflexive infinitives end in -rsi: alzarsi -> alzare,
+    # pentirsi -> pentire, accorgersi -> accorgere.
+    if normalized.endswith("rsi"):
+        return f"{normalized[:-3]}re"
+    return normalized
+
+
 def category_for_infinitive(infinitive: str) -> str | None:
-    """Return the frontend category for an infinitive, if classified."""
+    """Return the thematic frontend category for an infinitive, if classified."""
     normalized = infinitive.strip().casefold()
     direct = _BASE_TO_CATEGORY.get(normalized)
     if direct:
         return direct
+    return _BASE_TO_CATEGORY.get(base_infinitive(normalized))
 
-    # Corpus reflexive infinitives end in -rsi (alzarsi, pentirsi, accorgersi).
-    if normalized.endswith("rsi"):
-        base = f"{normalized[:-3]}re"
-        return _BASE_TO_CATEGORY.get(base)
-    return None
+
+def grammar_category_for_infinitive(infinitive: str) -> str:
+    """Classify an infinitive by regular ending or known irregular behavior."""
+    base = base_infinitive(infinitive)
+    if base in IRREGULAR_VERBS:
+        return "Verbes irréguliers"
+    if base.endswith("are"):
+        return "Verbes en -are (réguliers)"
+    if base.endswith("ire"):
+        return "Verbes en -ire (réguliers)"
+    if base.endswith("ere"):
+        return "Verbes en -ere (réguliers)"
+    return "Verbes irréguliers"
 
 
 def categories_for_infinitives(infinitives: list[str]) -> dict[str, str | None]:
