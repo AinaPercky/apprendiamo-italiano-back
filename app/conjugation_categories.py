@@ -90,7 +90,7 @@ CATEGORY_VERBS: OrderedDict[str, frozenset[str]] = OrderedDict(
                     "iniziare", "decidere", "aiutare", "usare", "tenere", "portare", "trovare",
                     "perdere", "vincere", "cambiare", "tagliare", "offrire", "servire",
                     "lamentare", "sbrigare", "comportare", "fidare", "innamorare", "pentire",
-                    "accorgere", "iscrivere", "divertire", "sentire", "sedere", "ricordare",
+                    "accorgere", "addire", "iscrivere", "divertire", "sentire", "sedere", "ricordare",
                     "arrabbiare", "vergognare", "occupare", "preoccupare",
                 }
             ),

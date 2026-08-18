@@ -68,6 +68,24 @@ class ConjugationCorpusTests(unittest.TestCase):
                 suspicious.append((infinitive, [form["form_text"] for form in block["forms"]]))
         self.assertEqual(suspicious, [])
 
+    def test_all_reflexive_verbs_have_a_thematic_frontend_category(self):
+        verbs, _, _ = parse_source_dataset(CORPUS_PATH)
+        expected_counts = {
+            "Auxiliaires": 0,
+            "Mouvement": 2,
+            "Communication": 1,
+            "Vie quotidienne": 13,
+            "Modaux": 0,
+            "Actions": 20,
+        }
+        actual_counts = {category: 0 for category in CATEGORY_ORDER}
+        for verb in verbs:
+            if verb["infinitive"].endswith("si"):
+                category = category_for_infinitive(verb["infinitive"])
+                self.assertIn(category, CATEGORY_ORDER)
+                actual_counts[category] += 1
+        self.assertEqual(actual_counts, expected_counts)
+
     def test_frontend_categories_cover_base_and_reflexive_verbs(self):
         self.assertEqual(
             list(CATEGORY_ORDER),
