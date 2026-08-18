@@ -24,6 +24,7 @@ GRAMMAR_CATEGORY_ORDER = (
     "Verbes en -ire (réguliers)",
     "Verbes en -ere (réguliers)",
     "Verbes irréguliers",
+    "Verbes réfléchis",
 )
 
 # Verbes dont le radical, l’auxiliaire ou les formes principales ne suivent pas
@@ -124,8 +125,11 @@ def category_for_infinitive(infinitive: str) -> str | None:
 
 
 def grammar_category_for_infinitive(infinitive: str) -> str:
-    """Classify an infinitive by regular ending or known irregular behavior."""
-    base = base_infinitive(infinitive)
+    """Classify an infinitive, keeping reflexive verbs in their own category."""
+    normalized = infinitive.strip().casefold()
+    if normalized.endswith("si"):
+        return "Verbes réfléchis"
+    base = base_infinitive(normalized)
     if base in IRREGULAR_VERBS:
         return "Verbes irréguliers"
     if base.endswith("are"):

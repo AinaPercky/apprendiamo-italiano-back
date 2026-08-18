@@ -106,7 +106,7 @@ class ConjugationCorpusTests(unittest.TestCase):
         verbs, _, _ = parse_source_dataset(CORPUS_PATH)
         reflexive_verbs = [verb["infinitive"] for verb in verbs if verb["infinitive"].endswith("rsi")]
         self.assertEqual(len(reflexive_verbs), 36)
-        self.assertTrue(all(grammar_category_for_infinitive(verb) in GRAMMAR_CATEGORY_ORDER for verb in reflexive_verbs))
+        self.assertTrue(all(grammar_category_for_infinitive(verb) == "Verbes réfléchis" for verb in reflexive_verbs))
 
     def test_grammar_categories_classify_regular_and_irregular_verbs(self):
         self.assertEqual(
@@ -116,17 +116,18 @@ class ConjugationCorpusTests(unittest.TestCase):
                 "Verbes en -ire (réguliers)",
                 "Verbes en -ere (réguliers)",
                 "Verbes irréguliers",
+                "Verbes réfléchis",
             ],
         )
         expected = {
             "parlare": "Verbes en -are (réguliers)",
             "capire": "Verbes en -ire (réguliers)",
             "scrivere": "Verbes en -ere (réguliers)",
-            "alzarsi": "Verbes en -are (réguliers)",
-            "dormirsi": "Verbes en -ire (réguliers)",
+            "alzarsi": "Verbes réfléchis",
+            "dormirsi": "Verbes réfléchis",
             "essere": "Verbes irréguliers",
             "andare": "Verbes irréguliers",
-            "pentirsi": "Verbes irréguliers",
+            "pentirsi": "Verbes réfléchis",
         }
         for infinitive, category in expected.items():
             self.assertEqual(grammar_category_for_infinitive(infinitive), category)
