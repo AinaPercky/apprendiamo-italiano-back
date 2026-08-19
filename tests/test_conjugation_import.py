@@ -15,11 +15,11 @@ class ConjugationCorpusTests(unittest.TestCase):
 
     def test_markup_and_persons_are_normalized(self):
         self.assertEqual(clean_source_text("io [b]sono[|b]"), "io sono")
-        forms = parse_person_forms("Indicativo", "io [b]sono[|b][br]tu [b]sei[|b][br]")
+        forms = parse_person_forms("Indicativo", "io [b]sono[|b][br]lui/lei [b]è fermato/a[|b][br]")
         self.assertEqual(forms[0]["person_label"], "io")
         self.assertEqual(forms[0]["form_text"], "sono")
-        self.assertEqual(forms[1]["person_label"], "tu")
-        self.assertEqual(forms[1]["form_text"], "sei")
+        self.assertEqual(forms[1]["person_label"], "lui/lei")
+        self.assertEqual(forms[1]["form_text"], "è fermato/a")
 
     def test_reflexive_verbs_are_present_and_have_normalized_forms(self):
         verbs, _, _ = parse_source_dataset(CORPUS_PATH)
@@ -53,8 +53,33 @@ class ConjugationCorpusTests(unittest.TestCase):
 
         accorgersi = by_infinitive["accorgersi"]
         accorgersi_passato = accorgersi["blocks"][("Indicativo", "Passato prossimo")]["forms"]
-        self.assertEqual(accorgersi_passato[0]["form_text"], "mi sono accorto")
-        self.assertEqual(accorgersi_passato[3]["form_text"], "ci siamo accorti")
+        self.assertEqual(accorgersi_passato[0]["form_text"], "mi sono accorto/a")
+        self.assertEqual(accorgersi_passato[3]["form_text"], "ci siamo accorti/e")
+
+    def test_essere_participles_include_gender_and_number_variants(self):
+        verbs, _, _ = parse_source_dataset(CORPUS_PATH)
+        essere_auxiliaries = {
+            "sono", "sei", "è", "siamo", "siete", "ero", "eri", "era", "eravamo", "eravate", "erano",
+            "sarò", "sarai", "sarà", "saremo", "sarete", "saranno", "fui", "fosti", "fu", "fummo", "foste", "furono",
+            "sia", "siano", "siate", "fossi", "fosse", "fossimo", "fossero", "sarei", "saresti", "sarebbe", "saremmo", "sareste", "sarebbero",
+            "essere", "essendo",
+        }
+        checked = 0
+        for verb in verbs:
+            for (mood, tense), block in verb["blocks"].items():
+                for form in block["forms"]:
+                    tokens = form["form_text"].casefold().split()
+                    if len(tokens) < 2 or not any(token in essere_auxiliaries for token in tokens[:-1]):
+                        continue
+                    checked += 1
+                    person = str(form["person_label"] or "").casefold()
+                    participle = tokens[-1]
+                    self.assertIn("/", participle, f"Genre absent : {verb['infinitive']} / {mood} / {tense} / {form['form_text']}")
+                    if person.endswith(("noi", "voi", "loro")):
+                        self.assertTrue(participle.endswith("/e"), f"Nombre absent : {form['form_text']}")
+                    else:
+                        self.assertTrue(participle.endswith("/a"), f"Genre absent : {form['form_text']}")
+        self.assertGreater(checked, 1000)
 
     def test_essere_participles_agree_for_plural_persons(self):
         verbs, _, _ = parse_source_dataset(CORPUS_PATH)
