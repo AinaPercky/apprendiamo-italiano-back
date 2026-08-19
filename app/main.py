@@ -50,7 +50,9 @@ app.add_middleware(
 # -----------------------
 # Static files pour l'audio
 # -----------------------
-app.mount("/audios/files", StaticFiles(directory=AUDIO_DIR), name="audios_files")
+# Compatibilité avec les anciens MP3 présents dans le package. Les nouveaux
+# audios utilisent la route DB-backed /audios/{id}/file.
+app.mount("/audios/files", StaticFiles(directory=str(AUDIO_DIR), check_dir=False), name="audios_files")
 
 # -----------------------
 # Inclusion des Routers

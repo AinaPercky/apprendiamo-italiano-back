@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, Form
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
@@ -37,6 +37,18 @@ async def list_audios(
     return await crud_audios.list_audio_items(db)
 
     # return await crud_audios.list_audio_items(db, skip, limit)
+
+@router.get("/{audio_id}/file", response_class=Response)
+async def stream_audio(audio_id: int, db: AsyncSession = Depends(get_db)):
+    audio = await crud_audios.get_audio_bytes(db, audio_id)
+    if audio is None:
+        raise HTTPException(status_code=404, detail="Fichier audio introuvable")
+    payload, content_type = audio
+    return Response(
+        content=payload,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 @router.get("/{audio_id}", response_model=schemas.AudioItem)
 async def get_audio(audio_id: int, db: AsyncSession = Depends(get_db)):

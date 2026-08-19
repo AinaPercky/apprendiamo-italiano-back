@@ -272,6 +272,9 @@ class AudioItem(Base):
     title = Column(String, index=True, nullable=False)
     text = Column(String, nullable=False)
     filename = Column(String, nullable=False)
+    # Données MP3 persistées en Data URI pour les déploiements serverless.
+    # Nullable afin de préserver les anciens enregistrements créés avant cette migration.
+    audio_data = Column(Text, nullable=True)
     category = Column(String, index=True, nullable=False)
     language = Column(String, default='it')
     ipa = Column(String, nullable=True)
