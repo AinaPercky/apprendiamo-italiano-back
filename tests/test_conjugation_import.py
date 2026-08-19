@@ -24,7 +24,30 @@ class ConjugationCorpusTests(unittest.TestCase):
                 for form in block["forms"]:
                     checked += 1
                     self.assertIsNone(form["person_label"], f"Label inattendu : {verb['infinitive']} / {mood} / {form['form_text']}")
-        self.assertEqual(checked, 3218)
+        self.assertEqual(checked, 3430)
+
+    def test_image_irregular_verbs_are_complete_and_classified(self):
+        verbs, _, _ = parse_source_dataset(CORPUS_PATH)
+        by_infinitive = {verb["normalized_infinitive"]: verb for verb in verbs}
+        expected = {
+            "assolvere", "dedurre", "distendere", "eleggere", "emergere", "erigere",
+            "escludere", "esplodere", "estendere", "estinguere", "fungere", "illudere",
+            "immergere", "imprimere", "incidere", "indurre", "influenzare", "infrangere",
+            "persuadere", "pretendere", "pungere", "resistere", "respingere", "scalfire",
+            "scommettere", "sconfiggere", "scorgere", "sospendere", "tingere", "ungere",
+        }
+        self.assertTrue(expected.issubset(by_infinitive))
+        for infinitive in expected:
+            verb = by_infinitive[infinitive]
+            self.assertEqual(grammar_category_for_infinitive(infinitive), "Verbes irréguliers")
+            self.assertEqual(len(verb["blocks"]), 21)
+            self.assertEqual(
+                len(verb["blocks"][("Indicativo", "Presente")]["forms"]),
+                6,
+            )
+            for (mood, _tense), block in verb["blocks"].items():
+                if mood in {"Infinito", "Participio", "Gerundio"}:
+                    self.assertTrue(all(form["person_label"] is None for form in block["forms"]))
 
     def test_markup_and_persons_are_normalized(self):
         self.assertEqual(clean_source_text("io [b]sono[|b]"), "io sono")
@@ -187,7 +210,7 @@ class ConjugationCorpusTests(unittest.TestCase):
         expected = {
             "parlare": "Verbes en -are (réguliers)",
             "capire": "Verbes en -ire (réguliers)",
-            "scrivere": "Verbes en -ere (réguliers)",
+            "scrivere": "Verbes irréguliers",
             "alzarsi": "Verbes réfléchis",
             "dormirsi": "Verbes réfléchis",
             "essere": "Verbes irréguliers",
