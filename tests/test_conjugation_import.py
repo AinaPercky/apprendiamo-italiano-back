@@ -13,6 +13,19 @@ class ConjugationCorpusTests(unittest.TestCase):
         essere = next(verb for verb in verbs if verb["normalized_infinitive"] == "essere")
         self.assertEqual(len(essere["blocks"]), 21)
 
+    def test_non_personal_modes_have_no_personal_labels(self):
+        verbs, _, _ = parse_source_dataset(CORPUS_PATH)
+        non_personal_moods = {"Infinito", "Participio", "Gerundio"}
+        checked = 0
+        for verb in verbs:
+            for (mood, _tense), block in verb["blocks"].items():
+                if mood not in non_personal_moods:
+                    continue
+                for form in block["forms"]:
+                    checked += 1
+                    self.assertIsNone(form["person_label"], f"Label inattendu : {verb['infinitive']} / {mood} / {form['form_text']}")
+        self.assertEqual(checked, 3218)
+
     def test_markup_and_persons_are_normalized(self):
         self.assertEqual(clean_source_text("io [b]sono[|b]"), "io sono")
         forms = parse_person_forms("Indicativo", "io [b]sono[|b][br]lui/lei [b]è fermato/a[|b][br]")
@@ -94,7 +107,9 @@ class ConjugationCorpusTests(unittest.TestCase):
                 if tense not in compound_tenses:
                     continue
                 for form in block["forms"]:
-                    person = str(form["person_label"] or "").casefold().split()[-1]
+                    if not form["person_label"]:
+                        continue
+                    person = str(form["person_label"]).casefold().split()[-1]
                     if person not in {"noi", "voi", "loro"}:
                         continue
                     clean_tokens = form["form_text"].casefold().split()

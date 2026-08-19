@@ -68,6 +68,9 @@ def parse_person_forms(mood: str, raw_italian: str) -> list[dict[str, Any]]:
             continue
         label = None
         form_text = line
+        if mood in {"Infinito", "Participio", "Gerundio"}:
+            forms.append({"person_order": index, "person_label": None, "form_text": form_text, "raw_line": raw_line})
+            continue
         if mood == "Imperativo":
             label = _IMPERATIVE_PERSONS[index] if index < len(_IMPERATIVE_PERSONS) else None
         else:
