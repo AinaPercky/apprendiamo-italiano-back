@@ -39,10 +39,10 @@ TENSE_ORDER = {
 _MARKUP_RE = re.compile(r"\[(?:\|?b|br)\]")
 _SPACES_RE = re.compile(r"\s+")
 _PERSON_PREFIXES = (
-    ("che io ", "che io"), ("che tu ", "che tu"), ("che lui ", "che lui"),
-    ("che lei ", "che lei"), ("che noi ", "che noi"), ("che voi ", "che voi"),
+    ("che io ", "che io"), ("che tu ", "che tu"), ("che lui/lei ", "che lui/lei"),
+    ("che lui ", "che lui"), ("che lei ", "che lei"), ("che noi ", "che noi"), ("che voi ", "che voi"),
     ("che loro ", "che loro"), ("io ", "io"), ("tu ", "tu"),
-    ("lui ", "lui"), ("lei ", "lei"), ("noi ", "noi"),
+    ("lui/lei ", "lui/lei"), ("lui ", "lui"), ("lei ", "lei"), ("noi ", "noi"),
     ("voi ", "voi"), ("loro ", "loro"),
 )
 _FALLBACK_PERSONS = ("io", "tu", "lui/lei", "noi", "voi", "loro")

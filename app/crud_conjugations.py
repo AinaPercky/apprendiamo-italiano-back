@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from . import models, schemas
+from .conjugation_categories import CATEGORY_ORDER, GRAMMAR_CATEGORY_ORDER, category_for_infinitive, grammar_category_for_infinitive
 from .conjugation_corpus import CORPUS_PATH, SOURCE_LICENSE, SOURCE_NAME, SOURCE_URL, clean_source_text, normalize_infinitive, parse_source_dataset
 
 
@@ -23,6 +24,8 @@ def serialize_verb(verb: models.ItalianVerb) -> dict[str, Any]:
     return {
         "verb_pk": verb.verb_pk,
         "infinitive": verb.infinitive,
+        "category": verb.category,
+        "grammar_category": verb.grammar_category,
         "source_record_id": verb.source_record_id,
         "source_name": verb.source_name,
         "source_url": verb.source_url,
@@ -67,12 +70,18 @@ async def list_verbs(
     search: str | None = None,
     mood: str | None = None,
     tense: str | None = None,
+    category: str | None = None,
+    grammar_category: str | None = None,
     skip: int = 0,
     limit: int = 50,
 ) -> list[models.ItalianVerb]:
     statement = select(models.ItalianVerb).options(selectinload(models.ItalianVerb.conjugations))
     if search:
         statement = statement.where(models.ItalianVerb.normalized_infinitive.ilike(f"%{normalize_infinitive(search)}%"))
+    if category and category != "All":
+        statement = statement.where(models.ItalianVerb.category == category)
+    if grammar_category and grammar_category != "All":
+        statement = statement.where(models.ItalianVerb.grammar_category == grammar_category)
     if mood or tense:
         statement = statement.join(models.ItalianConjugation)
         if mood:
@@ -119,7 +128,26 @@ async def get_metadata(db: AsyncSession) -> dict[str, Any]:
         .distinct()
         .order_by(models.ItalianConjugation.mood_order, models.ItalianConjugation.tense_order, models.ItalianConjugation.tense)
     )).all()
-    return {"moods": moods, "tenses": [{"mood": mood, "tense": tense} for mood, tense, _, _ in pairs]}
+    category_rows = (await db.execute(
+        select(models.ItalianVerb.category, func.count(models.ItalianVerb.verb_pk))
+        .group_by(models.ItalianVerb.category)
+    )).all()
+    category_counts = {category: 0 for category in CATEGORY_ORDER}
+    category_counts.update({category: count for category, count in category_rows if category in category_counts})
+    grammar_rows = (await db.execute(
+        select(models.ItalianVerb.grammar_category, func.count(models.ItalianVerb.verb_pk))
+        .group_by(models.ItalianVerb.grammar_category)
+    )).all()
+    grammar_category_counts = {category: 0 for category in GRAMMAR_CATEGORY_ORDER}
+    grammar_category_counts.update({category: count for category, count in grammar_rows if category in grammar_category_counts})
+    return {
+        "moods": moods,
+        "tenses": [{"mood": mood, "tense": tense} for mood, tense, _, _ in pairs],
+        "categories": list(CATEGORY_ORDER),
+        "category_counts": category_counts,
+        "grammar_categories": list(GRAMMAR_CATEGORY_ORDER),
+        "grammar_category_counts": grammar_category_counts,
+    }
 
 
 async def _replace_blocks(
@@ -156,12 +184,20 @@ async def _replace_blocks(
 
 async def create_verb(db: AsyncSession, payload: schemas.ItalianVerbCreate) -> models.ItalianVerb:
     normalized = normalize_infinitive(payload.infinitive)
+    category = payload.category.strip()
+    if category not in CATEGORY_ORDER:
+        raise ValueError("Catégorie de verbe invalide")
+    grammar_category = payload.grammar_category or grammar_category_for_infinitive(payload.infinitive)
+    if grammar_category not in GRAMMAR_CATEGORY_ORDER:
+        raise ValueError("Catégorie grammaticale invalide")
     existing = await get_verb_detail(db, normalized)
     if existing:
         raise ValueError("Ce verbe existe déjà")
     verb = models.ItalianVerb(
         infinitive=payload.infinitive.strip(),
         normalized_infinitive=normalized,
+        category=category,
+        grammar_category=grammar_category,
         source_record_id=payload.source_record_id,
         source_name="Création manuelle",
         source_url="",
@@ -178,6 +214,16 @@ async def update_verb(db: AsyncSession, infinitive: str, payload: schemas.Italia
     verb = await get_verb_detail(db, infinitive)
     if verb is None:
         return None
+    if payload.category is not None:
+        category = payload.category.strip()
+        if category not in CATEGORY_ORDER:
+            raise ValueError("Catégorie de verbe invalide")
+        verb.category = category
+    if payload.grammar_category is not None:
+        grammar_category = payload.grammar_category.strip()
+        if grammar_category not in GRAMMAR_CATEGORY_ORDER:
+            raise ValueError("Catégorie grammaticale invalide")
+        verb.grammar_category = grammar_category
     if payload.infinitive is not None:
         normalized = normalize_infinitive(payload.infinitive)
         collision = await get_verb_detail(db, normalized)
@@ -220,6 +266,8 @@ async def import_packaged_conjugations(db: AsyncSession, source_path: Path = COR
             verb = models.ItalianVerb(
                 infinitive=source_verb["infinitive"],
                 normalized_infinitive=source_verb["normalized_infinitive"],
+                category=category_for_infinitive(source_verb["infinitive"]) or "Actions",
+                grammar_category=grammar_category_for_infinitive(source_verb["infinitive"]),
                 source_record_id=source_verb["source_record_id"],
                 source_name=SOURCE_NAME,
                 source_url=SOURCE_URL,
@@ -231,6 +279,8 @@ async def import_packaged_conjugations(db: AsyncSession, source_path: Path = COR
             created += 1
         else:
             verb.infinitive = source_verb["infinitive"]
+            verb.category = category_for_infinitive(source_verb["infinitive"]) or "Actions"
+            verb.grammar_category = grammar_category_for_infinitive(source_verb["infinitive"])
             verb.source_record_id = source_verb["source_record_id"]
             verb.source_name = SOURCE_NAME
             verb.source_url = SOURCE_URL
