@@ -350,6 +350,8 @@ class ItalianVerb(Base):
     normalized_infinitive = Column(String(160), nullable=False, unique=True, index=True)
     category = Column(String(64), nullable=False, default="Actions", index=True)
     grammar_category = Column(String(64), nullable=False, default="Verbes irréguliers", index=True)
+    translation_fr = Column(String(160), nullable=True)
+    translation_en = Column(String(160), nullable=True)
     source_record_id = Column(String(64), nullable=True)
     source_name = Column(String(160), nullable=False, default="leandrobhbr/coniugazione")
     source_url = Column(Text, nullable=False)

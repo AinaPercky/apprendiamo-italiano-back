@@ -101,6 +101,8 @@ def parse_source_dataset(source_path: Path = CORPUS_PATH) -> tuple[list[dict[str
         verb = verbs.setdefault(normalized, {
             "infinitive": infinitive,
             "normalized_infinitive": normalized,
+            "translation_fr": clean_source_text(raw_verb.get("translation_fr")) or None,
+            "translation_en": clean_source_text(raw_verb.get("translation_en")) or None,
             "source_record_id": str(raw_verb.get("id")) if raw_verb.get("id") else None,
             "blocks": OrderedDict(),
         })

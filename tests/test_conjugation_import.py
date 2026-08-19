@@ -13,6 +13,13 @@ class ConjugationCorpusTests(unittest.TestCase):
         essere = next(verb for verb in verbs if verb["normalized_infinitive"] == "essere")
         self.assertEqual(len(essere["blocks"]), 21)
 
+    def test_all_verbs_have_french_and_english_translations(self):
+        verbs, _, _ = parse_source_dataset(CORPUS_PATH)
+        self.assertEqual(len(verbs), 584)
+        for verb in verbs:
+            self.assertTrue(verb["translation_fr"].strip(), verb["infinitive"])
+            self.assertTrue(verb["translation_en"].strip(), verb["infinitive"])
+
     def test_non_personal_modes_have_no_personal_labels(self):
         verbs, _, _ = parse_source_dataset(CORPUS_PATH)
         non_personal_moods = {"Infinito", "Participio", "Gerundio"}

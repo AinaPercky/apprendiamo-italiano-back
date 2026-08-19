@@ -26,6 +26,8 @@ def serialize_verb(verb: models.ItalianVerb) -> dict[str, Any]:
         "infinitive": verb.infinitive,
         "category": verb.category,
         "grammar_category": verb.grammar_category,
+        "translation_fr": verb.translation_fr,
+        "translation_en": verb.translation_en,
         "source_record_id": verb.source_record_id,
         "source_name": verb.source_name,
         "source_url": verb.source_url,
@@ -198,6 +200,8 @@ async def create_verb(db: AsyncSession, payload: schemas.ItalianVerbCreate) -> m
         normalized_infinitive=normalized,
         category=category,
         grammar_category=grammar_category,
+        translation_fr=payload.translation_fr.strip() if payload.translation_fr else None,
+        translation_en=payload.translation_en.strip() if payload.translation_en else None,
         source_record_id=payload.source_record_id,
         source_name="Création manuelle",
         source_url="",
@@ -224,6 +228,10 @@ async def update_verb(db: AsyncSession, infinitive: str, payload: schemas.Italia
         if grammar_category not in GRAMMAR_CATEGORY_ORDER:
             raise ValueError("Catégorie grammaticale invalide")
         verb.grammar_category = grammar_category
+    if payload.translation_fr is not None:
+        verb.translation_fr = payload.translation_fr.strip() or None
+    if payload.translation_en is not None:
+        verb.translation_en = payload.translation_en.strip() or None
     if payload.infinitive is not None:
         normalized = normalize_infinitive(payload.infinitive)
         collision = await get_verb_detail(db, normalized)
@@ -268,6 +276,8 @@ async def import_packaged_conjugations(db: AsyncSession, source_path: Path = COR
                 normalized_infinitive=source_verb["normalized_infinitive"],
                 category=category_for_infinitive(source_verb["infinitive"]) or "Actions",
                 grammar_category=grammar_category_for_infinitive(source_verb["infinitive"]),
+                translation_fr=source_verb["translation_fr"],
+                translation_en=source_verb["translation_en"],
                 source_record_id=source_verb["source_record_id"],
                 source_name=SOURCE_NAME,
                 source_url=SOURCE_URL,
@@ -281,6 +291,8 @@ async def import_packaged_conjugations(db: AsyncSession, source_path: Path = COR
             verb.infinitive = source_verb["infinitive"]
             verb.category = category_for_infinitive(source_verb["infinitive"]) or "Actions"
             verb.grammar_category = grammar_category_for_infinitive(source_verb["infinitive"])
+            verb.translation_fr = source_verb["translation_fr"]
+            verb.translation_en = source_verb["translation_en"]
             verb.source_record_id = source_verb["source_record_id"]
             verb.source_name = SOURCE_NAME
             verb.source_url = SOURCE_URL

@@ -24,7 +24,7 @@ async def read_verbs(
     category: str | None = Query(default=None, max_length=64),
     grammar_category: str | None = Query(default=None, max_length=64),
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
 ):
     verbs = await crud_conjugations.list_verbs(db, search, mood, tense, category, grammar_category, skip, limit)
@@ -34,6 +34,8 @@ async def read_verbs(
             "infinitive": verb.infinitive,
             "category": verb.category,
             "grammar_category": verb.grammar_category,
+            "translation_fr": verb.translation_fr,
+            "translation_en": verb.translation_en,
             "source_name": verb.source_name,
             "conjugation_count": len(verb.conjugations),
         }
