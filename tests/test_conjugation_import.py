@@ -16,7 +16,7 @@ class ConjugationCorpusTests(unittest.TestCase):
 
     def test_all_verbs_have_french_and_english_translations(self):
         verbs, _, _ = parse_source_dataset(CORPUS_PATH)
-        self.assertEqual(len(verbs), 584)
+        self.assertEqual(len(verbs), 610)
         for verb in verbs:
             self.assertTrue(verb["translation_fr"].strip(), verb["infinitive"])
             self.assertTrue(verb["translation_en"].strip(), verb["infinitive"])
@@ -68,7 +68,7 @@ class ConjugationCorpusTests(unittest.TestCase):
                 for form in block["forms"]:
                     checked += 1
                     self.assertIsNone(form["person_label"], f"Label inattendu : {verb['infinitive']} / {mood} / {form['form_text']}")
-        self.assertEqual(checked, 3430)
+        self.assertEqual(checked, 3586)
 
     def test_image_irregular_verbs_are_complete_and_classified(self):
         verbs, _, _ = parse_source_dataset(CORPUS_PATH)
@@ -108,9 +108,10 @@ class ConjugationCorpusTests(unittest.TestCase):
             "alzarsi", "lavarsi", "vestirsi", "svegliarsi", "chiamarsi",
             "divertirsi", "sentirsi", "sedersi", "addormentarsi", "pentirsi",
             "accorgersi", "addirsi", "iscriversi", "servirsi", "sbrigarsi", "trasferirsi",
+            "nascondersi", "esprimersi", "abituarsi", "trovarsi",
         }
         self.assertTrue(expected.issubset(by_infinitive))
-        self.assertEqual(sum(infinitive.endswith("si") for infinitive in by_infinitive), 36)
+        self.assertEqual(sum(infinitive.endswith("si") for infinitive in by_infinitive), 62)
         self.assertNotIn("accorgere", by_infinitive)
 
         alzarsi = by_infinitive["alzarsi"]
@@ -204,11 +205,11 @@ class ConjugationCorpusTests(unittest.TestCase):
         verbs, _, _ = parse_source_dataset(CORPUS_PATH)
         expected_counts = {
             "Auxiliaires": 0,
-            "Mouvement": 2,
-            "Communication": 1,
-            "Vie quotidienne": 13,
+            "Mouvement": 3,
+            "Communication": 6,
+            "Vie quotidienne": 19,
             "Modaux": 0,
-            "Actions": 20,
+            "Actions": 34,
         }
         actual_counts = {category: 0 for category in CATEGORY_ORDER}
         for verb in verbs:
@@ -237,7 +238,7 @@ class ConjugationCorpusTests(unittest.TestCase):
     def test_all_reflexive_verbs_have_a_grammar_category(self):
         verbs, _, _ = parse_source_dataset(CORPUS_PATH)
         reflexive_verbs = [verb["infinitive"] for verb in verbs if verb["infinitive"].endswith("rsi")]
-        self.assertEqual(len(reflexive_verbs), 36)
+        self.assertEqual(len(reflexive_verbs), 62)
         self.assertTrue(all(grammar_category_for_infinitive(verb) == "Verbes réfléchis" for verb in reflexive_verbs))
 
     def test_grammar_categories_classify_regular_and_irregular_verbs(self):

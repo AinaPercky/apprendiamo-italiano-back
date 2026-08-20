@@ -212,7 +212,7 @@ CATEGORY_VERBS: OrderedDict[str, frozenset[str]] = OrderedDict(
                 {
                     "andare", "venire", "partire", "arrivare", "tornare", "escire",
                     "entrare", "muovere", "correre", "camminare", "fuggire", "salire",
-                    "scendere", "restare", "rientrare", "trasferire", "viaggiare",
+                    "scendere", "restare", "rientrare", "trasferire", "viaggiare", "allontanare",
                 }
             ),
         ),
@@ -222,7 +222,8 @@ CATEGORY_VERBS: OrderedDict[str, frozenset[str]] = OrderedDict(
                 {
                     "dire", "parlare", "chiamare", "rispondere", "domandare", "chiedere",
                     "comunicare", "raccontare", "spiegare", "ascoltare", "leggere",
-                    "scrivere", "discutere", "contattare", "conversare", "annunciare",
+                    "scrivere", "discutere", "contattare", "conversare", "annunciare", "esprimere",
+                    "presentare",
                 }
             ),
         ),
@@ -233,7 +234,8 @@ CATEGORY_VERBS: OrderedDict[str, frozenset[str]] = OrderedDict(
                     "mangiare", "bere", "dormire", "lavorare", "studiare", "abitare",
                     "vivere", "alzare", "lavare", "vestire", "svegliare", "addormentare", "cucinare",
                     "cenare", "comprare", "preparare", "sposare", "incontrare", "rilassare",
-                    "fermare", "truccare", "sistemare", "laureare",
+                    "fermare", "truccare", "sistemare", "laureare", "abituare", "annoiare",
+                    "coricare", "pettinare", "riposare",
                 }
             ),
         ),
@@ -251,7 +253,8 @@ CATEGORY_VERBS: OrderedDict[str, frozenset[str]] = OrderedDict(
                     "perdere", "vincere", "cambiare", "tagliare", "offrire", "servire",
                     "lamentare", "sbrigare", "comportare", "fidare", "innamorare", "pentire",
                     "accorgere", "addire", "iscrivere", "divertire", "sentire", "sedere", "ricordare",
-                    "arrabbiare", "vergognare", "occupare", "preoccupare",
+                    "arrabbiare", "vergognare", "occupare", "preoccupare", "aspettare", "battere",
+                    "bruciare", "nascondere", "rendere", "rompere", "sbagliare", "sorprendere",
                 }
             ),
         ),

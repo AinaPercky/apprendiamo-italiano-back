@@ -16,7 +16,41 @@ REFLEXIVE_BASES = [
     'accorgere', 'iscrivere', 'offrire', 'servire', 'lamentare',
     'sbrigare', 'comportare', 'fidare', 'innamorare', 'laureare',
     'trasferire', 'sistemare', 'truccare', 'tagliare',
+    'abituare', 'allontanare', 'annoiare', 'aspettare', 'battere',
+    'bruciare', 'cambiare', 'chiedere', 'comprare', 'coricare',
+    'decidere', 'dire', 'domandare', 'esprimere', 'fare', 'guardare',
+    'mettere', 'nascondere', 'pettinare', 'presentare', 'rendere',
+    'riposare', 'rompere', 'sbagliare', 'sorprendere', 'trovare',
 ]
+
+REFLEXIVE_TRANSLATIONS = {
+    'abituarsi': ('s’habituer', 'to get used to'),
+    'allontanarsi': ('s’éloigner', 'to move away'),
+    'annoiarsi': ('s’ennuyer', 'to get bored'),
+    'aspettarsi': ('s’attendre à', 'to expect'),
+    'battersi': ('se battre', 'to fight'),
+    'bruciarsi': ('se brûler', 'to burn oneself'),
+    'cambiarsi': ('se changer', 'to change clothes'),
+    'chiedersi': ('se demander', 'to wonder'),
+    'comprarsi': ('s’acheter', 'to buy for oneself'),
+    'coricarsi': ('se coucher', 'to go to bed'),
+    'decidersi': ('se décider', 'to decide'),
+    'dirsi': ('se dire', 'to tell oneself'),
+    'domandarsi': ('se demander', 'to wonder'),
+    'esprimersi': ('s’exprimer', 'to express oneself'),
+    'farsi': ('se faire', 'to do for oneself'),
+    'guardarsi': ('se regarder', 'to look at oneself'),
+    'mettersi': ('se mettre', 'to put oneself / begin'),
+    'nascondersi': ('se cacher', 'to hide oneself'),
+    'pettinarsi': ('se peigner', 'to comb one’s hair'),
+    'presentarsi': ('se présenter', 'to introduce oneself'),
+    'rendersi': ('se rendre compte', 'to realize'),
+    'riposarsi': ('se reposer', 'to rest'),
+    'rompersi': ('se casser', 'to break one’s arm or leg'),
+    'sbagliarsi': ('se tromper', 'to be mistaken'),
+    'sorprendersi': ('être surpris', 'to be surprised'),
+    'trovarsi': ('se trouver', 'to find oneself / be located'),
+}
 
 PERSON_PRONOUN = {
     'io': 'mi',
@@ -43,7 +77,7 @@ AUXILIARY_REPLACEMENTS = {
     'avessi': 'fossi', 'avesse': 'fosse', 'avessimo': 'fossimo', 'avessero': 'fossero',
     'avrei': 'sarei', 'avresti': 'saresti', 'avrebbe': 'sarebbe', 'avremmo': 'saremmo', 'avreste': 'sareste', 'avrebbero': 'sarebbero',
 }
-_PREFIXES = ('che io', 'che tu', 'che lui', 'che lei', 'che noi', 'che voi', 'che loro', 'io', 'tu', 'lui', 'lei', 'noi', 'voi', 'loro')
+_PREFIXES = ('che lui/lei', 'che io', 'che tu', 'che lui', 'che lei', 'che noi', 'che voi', 'che loro', 'lui/lei', 'io', 'tu', 'lui', 'lei', 'noi', 'voi', 'loro')
 _MARKUP = re.compile(r'\[(?:\|?b|br)\]')
 
 
@@ -63,15 +97,27 @@ def append_clitic(form: str, clitic: str) -> str:
     return form if form.casefold().endswith(clitic.casefold()) else f'{form}{clitic}'
 
 
+def agree_participle(rest: str, key: str) -> str:
+    if not rest:
+        return rest
+    parts = rest.split(' ')
+    participle = parts[-1]
+    if '/' not in participle and participle.endswith('o'):
+        participle = participle[:-1] + ('i/e' if key in {'noi', 'voi', 'loro'} else 'o/a')
+        parts[-1] = participle
+    return ' '.join(parts)
+
+
 def reflexive_form(person: str, form: str, mood: str, tense: str) -> str:
     key = person.replace('che ', '').strip()
     pronoun = PERSON_PRONOUN.get(key, 'si')
-    if form.casefold().startswith(pronoun + ' '):
-        return form
+    prefix = pronoun + ' '
+    if form.casefold().startswith(prefix):
+        form = form[len(prefix):].strip()
     if mood in {'Indicativo', 'Congiuntivo', 'Condizionale'} and tense in COMPOUND_TENSES:
         pieces = form.split(' ', 1)
         auxiliary = AUXILIARY_REPLACEMENTS.get(pieces[0], pieces[0])
-        rest = pieces[1] if len(pieces) == 2 else ''
+        rest = agree_participle(pieces[1] if len(pieces) == 2 else '', key)
         return f'{pronoun} {auxiliary}{(" " + rest) if rest else ""}'.strip()
     return f'{pronoun} {form}'.strip()
 
@@ -123,7 +169,10 @@ def transform_block(base_block: dict) -> dict:
         for line in lines:
             form = clean(line)
             if mood == 'Infinito' and tense == 'Presente':
-                result_lines.append(form[:-2] + 'rsi' if form.endswith('re') else form + 'si')
+                if form == 'fare':
+                    result_lines.append('farsi')
+                else:
+                    result_lines.append(form[:-2] + 'rsi' if form.endswith('re') else form + 'si')
             elif mood == 'Infinito' and tense == 'Passato':
                 parts = form.split(' ', 1)
                 participle = parts[1] if len(parts) == 2 else form
@@ -168,9 +217,15 @@ def main() -> None:
         base_item = by_verb.get(base)
         if not base_item:
             raise RuntimeError(f'Missing base verb in corpus: {base}')
+        translation_fr, translation_en = REFLEXIVE_TRANSLATIONS.get(
+            reflexive,
+            (f"{reflexive} (forme réfléchie)", f"to {base} oneself"),
+        )
         item = {
             'id': f'reflexive-{base}',
             'verbi': reflexive,
+            'translation_fr': translation_fr,
+            'translation_en': translation_en,
             'coniugazione': [],
         }
         for block in base_item.get('coniugazione') or []:
