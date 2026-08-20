@@ -145,10 +145,41 @@ async def get_current_user(
     return user
 
 
+ROLE_ADMIN = "admin"
+ROLE_PROFESSEUR = "professeur"
+ROLE_ETUDIANT = "etudiant"
+
+
 async def get_current_active_user(
     current_user: models.User = Depends(get_current_user),
 ) -> models.User:
     """Wrapper simple pour vérifier que l'utilisateur est actif."""
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Utilisateur inactif")
+    return current_user
+
+
+def require_roles(*allowed_roles: str):
+    async def dependency(current_user: models.User = Depends(get_current_active_user)) -> models.User:
+        if current_user.role not in allowed_roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Droits insuffisants")
+        return current_user
+    return dependency
+
+
+async def require_admin(current_user: models.User = Depends(get_current_active_user)) -> models.User:
+    if current_user.role != ROLE_ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Droits administrateur requis")
+    return current_user
+
+
+async def require_teacher_or_admin(current_user: models.User = Depends(get_current_active_user)) -> models.User:
+    if current_user.role not in {ROLE_ADMIN, ROLE_PROFESSEUR}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Droits professeur ou administrateur requis")
+    return current_user
+
+
+async def require_student_or_above(current_user: models.User = Depends(get_current_active_user)) -> models.User:
+    if current_user.role not in {ROLE_ADMIN, ROLE_PROFESSEUR, ROLE_ETUDIANT}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Rôle utilisateur invalide")
     return current_user

@@ -15,6 +15,7 @@ class DeckBase(BaseModel):
 
 class DeckCreate(DeckBase):
     id_json: Optional[str] = None
+    description: Optional[str] = None
 
 
 # Schéma simple pour Deck sans cards (évite les problèmes de chargement)
@@ -23,6 +24,11 @@ class DeckSimple(DeckBase):
     id_json: str
     total_correct: int = 0
     total_attempts: int = 0
+    created_by: Optional[int] = None
+    visibility: str = "global"
+    description: Optional[str] = None
+    published_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -119,6 +125,11 @@ class Deck(DeckBase):
     id_json: str
     total_correct: int = 0
     total_attempts: int = 0
+    created_by: Optional[int] = None
+    visibility: str = "global"
+    description: Optional[str] = None
+    published_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
     cards: List[Card] = []
 
     model_config = {"from_attributes": True}
@@ -157,8 +168,21 @@ class UserUpdate(BaseModel):
     profile_picture: Optional[str] = None
 
 
+class AdminUserUpdate(BaseModel):
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and value not in {"admin", "professeur", "etudiant"}:
+            raise ValueError("Rôle invalide")
+        return value
+
+
 class UserResponse(UserBase):
     user_pk: int
+    role: str = "etudiant"
     is_active: bool
     is_verified: bool
     total_score: int
@@ -304,6 +328,7 @@ class AudioItemBase(BaseModel):
     category: str
     language: str = 'it'
     ipa: Optional[str] = None
+    description: Optional[str] = None
 
 
 class AudioItemCreate(AudioItemBase):
@@ -314,7 +339,94 @@ class AudioItem(AudioItemBase):
     id: int
     filename: str
     audio_url: str
+    created_by: Optional[int] = None
+    deck_pk: Optional[int] = None
+    visibility: str = "global"
+    published_at: Optional[datetime] = None
     
+    model_config = {"from_attributes": True}
+
+
+# ============================================================================
+# CATALOGUE, PANIER, COMMANDES ET ABONNEMENTS
+# ============================================================================
+
+class OrderItemCreate(BaseModel):
+    target_type: Literal["deck", "conjugaison", "grammaire"]
+    target_id: Optional[int] = None
+    duration_code: Literal["1d", "3d", "1w", "15d", "1m"]
+    price_snapshot: Optional[float] = Field(default=None, ge=0)
+
+
+class OrderCreate(BaseModel):
+    items: List[OrderItemCreate] = Field(..., min_length=1, max_length=100)
+
+
+class OrderItemResponse(OrderItemCreate):
+    order_item_pk: int
+    order_pk: int
+    status: str
+    activated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class OrderResponse(BaseModel):
+    order_pk: int
+    user_pk: int
+    status: str
+    admin_note: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    items: List[OrderItemResponse] = []
+
+    model_config = {"from_attributes": True}
+
+
+class OrderActivationRequest(BaseModel):
+    item_ids: Optional[List[int]] = None
+
+
+class ManualSubscriptionCreate(BaseModel):
+    user_pk: int
+    product_type: Literal["deck", "conjugaison", "grammaire"]
+    product_id: Optional[int] = None
+    duration_code: Literal["1d", "3d", "1w", "15d", "1m"]
+    admin_note: Optional[str] = None
+
+
+class SubscriptionResponse(BaseModel):
+    subscription_pk: int
+    user_pk: int
+    product_type: str
+    product_id: Optional[int] = None
+    start_at: datetime
+    end_at: datetime
+    status: str
+    origin: str
+    order_item_pk: Optional[int] = None
+    activated_by: Optional[int] = None
+    admin_note: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AccessResponse(BaseModel):
+    allowed: bool
+    preview_only: bool = True
+    reason: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+
+class NotificationResponse(BaseModel):
+    notification_pk: int
+    admin_id: Optional[int] = None
+    order_pk: Optional[int] = None
+    kind: str
+    read_at: Optional[datetime] = None
+    created_at: datetime
+
     model_config = {"from_attributes": True}
 
 

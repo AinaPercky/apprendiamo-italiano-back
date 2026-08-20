@@ -3,9 +3,9 @@ from fastapi import APIRouter, Depends, Query, HTTPException, File, UploadFile, 
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
-from .. import crud_cards, crud_decks, crud_card_audio, crud_public_card_qr, schemas
+from .. import crud_access, crud_cards, crud_decks, crud_card_audio, crud_public_card_qr, schemas
 from ..database import get_db
-from ..security import get_current_active_user
+from ..security import get_current_active_user, require_teacher_or_admin
 from .. import models
 
 router = APIRouter(
@@ -15,22 +15,50 @@ router = APIRouter(
 
 # === DECKS ===
 @router.post("/decks/", response_model=schemas.DeckSimple)
-async def create_deck(deck: schemas.DeckCreate, db: AsyncSession = Depends(get_db)):
-    return await crud_cards.create_deck(db, deck)
+async def create_deck(
+    deck: schemas.DeckCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(require_teacher_or_admin),
+):
+    return await crud_cards.create_deck(db, deck, created_by=current_user.user_pk)
 
 @router.get("/decks/", response_model=List[schemas.Deck])
-async def read_decks(skip: int = 0, limit: int = 10, search: str = Query(None), db: AsyncSession = Depends(get_db)):
-    return await crud_cards.get_decks(db, skip=skip, limit=limit, search=search)
+async def read_decks(
+    skip: int = 0,
+    limit: int = 10,
+    search: str = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    decks = await crud_cards.get_decks(db, skip=skip, limit=limit, search=search)
+    if current_user.role != "etudiant":
+        return decks
+    for deck in decks:
+        access = await crud_access.access_response(db, current_user, "deck", deck.deck_pk)
+        if not access.allowed:
+            deck.cards = []
+    return decks
 
 @router.get("/decks/{deck_pk}", response_model=schemas.Deck)
-async def read_deck(deck_pk: int, db: AsyncSession = Depends(get_db)):
+async def read_deck(
+    deck_pk: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
     deck = await crud_cards.get_deck(db, deck_pk)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    access = await crud_access.access_response(db, current_user, "deck", deck_pk)
+    if not access.allowed:
+        deck.cards = []
     return deck
 
 @router.delete("/decks/{deck_pk}")
-async def delete_deck(deck_pk: int, db: AsyncSession = Depends(get_db)):
+async def delete_deck(
+    deck_pk: int,
+    db: AsyncSession = Depends(get_db),
+    _current_user: models.User = Depends(require_teacher_or_admin),
+):
     deleted = await crud_decks.delete_deck(db, deck_pk)
     if not deleted:
         raise HTTPException(status_code=404, detail="Deck not found")
@@ -38,7 +66,11 @@ async def delete_deck(deck_pk: int, db: AsyncSession = Depends(get_db)):
 
 # === CARTES – IMPORTANT : on expose maintenant les champs Anki ===
 @router.post("/cards/batch_import")
-async def batch_import_cards(cards: List[schemas.CardCreate], db: AsyncSession = Depends(get_db)):
+async def batch_import_cards(
+    cards: List[schemas.CardCreate],
+    db: AsyncSession = Depends(get_db),
+    _current_user: models.User = Depends(require_teacher_or_admin),
+):
     """
     Importe une liste de cartes en mode Upsert (Mise à jour ou Création).
     - Met à jour les cartes existantes (basé sur le mot italien 'back').
@@ -48,7 +80,11 @@ async def batch_import_cards(cards: List[schemas.CardCreate], db: AsyncSession =
     return await crud_cards.batch_upsert_cards(db, cards)
 
 @router.post("/cards/", response_model=schemas.Card)
-async def create_card(card: schemas.CardCreate, db: AsyncSession = Depends(get_db)):
+async def create_card(
+    card: schemas.CardCreate,
+    db: AsyncSession = Depends(get_db),
+    _current_user: models.User = Depends(require_teacher_or_admin),
+):
     return await crud_cards.create_card(db, card)
 
 @router.get("/cards/", response_model=List[schemas.Card])
@@ -59,8 +95,15 @@ async def read_cards(
     search: str = Query(None),
     min_box: int = Query(None),
     due_only: bool = Query(False, description="Seulement les cartes à réviser aujourd'hui"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
 ):
+    if current_user.role == "etudiant":
+        if deck_pk is None:
+            return []
+        access = await crud_access.access_response(db, current_user, "deck", deck_pk)
+        if not access.allowed:
+            raise HTTPException(status_code=402, detail="Un pass actif est requis pour accéder aux cartes")
     return await crud_cards.get_cards(
         db, skip=skip, limit=limit, deck_pk=deck_pk, search=search, 
         min_box=min_box, due_only=due_only
@@ -71,6 +114,7 @@ async def upload_card_audio(
     card_pk: int,
     audio_file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    _current_user: models.User = Depends(require_teacher_or_admin),
 ):
     try:
         audio = await crud_card_audio.upsert_card_audio(db, card_pk, audio_file)
@@ -82,7 +126,18 @@ async def upload_card_audio(
 
 
 @router.get("/cards/{card_pk}/audio")
-async def read_card_audio(card_pk: int, db: AsyncSession = Depends(get_db)):
+async def read_card_audio(
+    card_pk: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    if current_user.role == "etudiant":
+        card = await crud_cards.get_card(db, card_pk)
+        if card is None:
+            raise HTTPException(status_code=404, detail="Card not found")
+        access = await crud_access.access_response(db, current_user, "deck", card.deck_pk)
+        if not access.allowed:
+            raise HTTPException(status_code=402, detail="Un pass actif est requis pour écouter cette carte")
     audio_result = await crud_card_audio.get_card_audio_bytes(db, card_pk)
     if audio_result is None:
         raise HTTPException(status_code=404, detail="Audio pronunciation not found")
@@ -95,7 +150,11 @@ async def read_card_audio(card_pk: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/cards/{card_pk}/audio")
-async def remove_card_audio(card_pk: int, db: AsyncSession = Depends(get_db)):
+async def remove_card_audio(
+    card_pk: int,
+    db: AsyncSession = Depends(get_db),
+    _current_user: models.User = Depends(require_teacher_or_admin),
+):
     deleted = await crud_card_audio.delete_card_audio(db, card_pk)
     if not deleted:
         raise HTTPException(status_code=404, detail="Audio pronunciation not found")
@@ -144,21 +203,38 @@ async def read_public_qr_card_audio(
 
 
 @router.get("/cards/{card_pk}", response_model=schemas.Card)
-async def read_card(card_pk: int, db: AsyncSession = Depends(get_db)):
+async def read_card(
+    card_pk: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
     card = await crud_cards.get_card(db, card_pk)
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
+    if current_user.role == "etudiant":
+        access = await crud_access.access_response(db, current_user, "deck", card.deck_pk)
+        if not access.allowed:
+            raise HTTPException(status_code=402, detail="Un pass actif est requis pour accéder à cette carte")
     return card
 
 @router.put("/cards/{card_pk}", response_model=schemas.Card)
-async def update_card(card_pk: int, card: schemas.CardBase, db: AsyncSession = Depends(get_db)):
+async def update_card(
+    card_pk: int,
+    card: schemas.CardBase,
+    db: AsyncSession = Depends(get_db),
+    _current_user: models.User = Depends(require_teacher_or_admin),
+):
     updated_card = await crud_cards.update_card(db, card_pk, card)
     if not updated_card:
         raise HTTPException(status_code=404, detail="Card not found")
     return updated_card
 
 @router.delete("/cards/{card_pk}")
-async def delete_card(card_pk: int, db: AsyncSession = Depends(get_db)):
+async def delete_card(
+    card_pk: int,
+    db: AsyncSession = Depends(get_db),
+    _current_user: models.User = Depends(require_teacher_or_admin),
+):
     deleted = await crud_cards.delete_card(db, card_pk)
     if not deleted:
         raise HTTPException(status_code=404, detail="Card not found")

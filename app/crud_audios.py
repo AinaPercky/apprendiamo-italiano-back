@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import uuid
 from pathlib import Path
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import HTTPException
@@ -172,7 +173,10 @@ async def create_audio_item(
     title: str,
     text: str,
     category: str,
-    language: str
+    language: str,
+    created_by: int | None = None,
+    deck_pk: int | None = None,
+    description: str | None = None,
 ):
     validate_category(category)
     validate_language(language)
@@ -196,7 +200,12 @@ async def create_audio_item(
         audio_data=_encode_audio_data(audio_payload),
         category=category,
         language=language,
-        ipa=ipa_text
+        ipa=ipa_text,
+        created_by=created_by,
+        deck_pk=deck_pk,
+        description=description,
+        visibility="global",
+        published_at=datetime.utcnow(),
     )
 
     db.add(audio_item)

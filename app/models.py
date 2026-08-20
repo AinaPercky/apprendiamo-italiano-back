@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, Text,Float, TIMESTAMP, String, inspect, Boolean, DateTime, Table, UniqueConstraint
+from sqlalchemy import Column, ForeignKey, Integer, Text,Float, TIMESTAMP, String, inspect, Boolean, DateTime, Table, UniqueConstraint, Numeric
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -21,6 +21,11 @@ class Deck(Base):
     name = Column(Text, nullable=False)
     total_correct = Column(Integer, default=0)
     total_attempts = Column(Integer, default=0)
+    created_by = Column(Integer, ForeignKey("users.user_pk", ondelete="SET NULL"), nullable=True, index=True)
+    visibility = Column(String(24), nullable=False, default="global", server_default="global", index=True)
+    description = Column(Text, nullable=True)
+    published_at = Column(DateTime(timezone=True), nullable=True)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relation Many-to-Many
     cards = relationship("Card", secondary=deck_cards, back_populates="decks")
@@ -160,6 +165,7 @@ class User(Base):
     
     # Statut et permissions
     is_active = Column(Boolean, default=True, index=True)
+    role = Column(String(32), nullable=False, default="etudiant", server_default="etudiant", index=True)
     is_verified = Column(Boolean, default=False)
     verification_token = Column(String, nullable=True)
     
@@ -278,6 +284,77 @@ class AudioItem(Base):
     category = Column(String, index=True, nullable=False)
     language = Column(String, default='it')
     ipa = Column(String, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.user_pk", ondelete="SET NULL"), nullable=True, index=True)
+    deck_pk = Column(Integer, ForeignKey("decks.deck_pk", ondelete="SET NULL"), nullable=True, index=True)
+    visibility = Column(String(24), nullable=False, default="global", server_default="global", index=True)
+    description = Column(Text, nullable=True)
+    published_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    order_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    user_pk = Column(Integer, ForeignKey("users.user_pk", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="pending_payment", server_default="pending_payment", index=True)
+    admin_note = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+
+    order_item_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    order_pk = Column(Integer, ForeignKey("orders.order_pk", ondelete="CASCADE"), nullable=False, index=True)
+    target_type = Column(String(24), nullable=False, index=True)
+    target_id = Column(Integer, nullable=True, index=True)
+    duration_code = Column(String(16), nullable=False)
+    status = Column(String(24), nullable=False, default="pending", server_default="pending", index=True)
+    price_snapshot = Column(Numeric(10, 2), nullable=True)
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    subscription_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    user_pk = Column(Integer, ForeignKey("users.user_pk", ondelete="CASCADE"), nullable=False, index=True)
+    product_type = Column(String(24), nullable=False, index=True)
+    product_id = Column(Integer, nullable=True, index=True)
+    start_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    end_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    status = Column(String(24), nullable=False, default="active", server_default="active", index=True)
+    origin = Column(String(32), nullable=False)
+    order_item_pk = Column(Integer, ForeignKey("order_items.order_item_pk", ondelete="SET NULL"), nullable=True, index=True)
+    activated_by = Column(Integer, ForeignKey("users.user_pk", ondelete="SET NULL"), nullable=True, index=True)
+    admin_note = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    notification_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    admin_id = Column(Integer, ForeignKey("users.user_pk", ondelete="CASCADE"), nullable=True, index=True)
+    order_pk = Column(Integer, ForeignKey("orders.order_pk", ondelete="CASCADE"), nullable=True, index=True)
+    kind = Column(String(48), nullable=False, default="order_created")
+    read_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False, index=True)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    audit_log_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    actor_user_pk = Column(Integer, ForeignKey("users.user_pk", ondelete="SET NULL"), nullable=True, index=True)
+    action = Column(String(64), nullable=False, index=True)
+    entity_type = Column(String(32), nullable=False, index=True)
+    entity_id = Column(Integer, nullable=True, index=True)
+    details = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False, index=True)
 
 
 class CardPerformance(Base):

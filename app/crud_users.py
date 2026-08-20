@@ -48,6 +48,7 @@ async def create_user(
         first_name=first_name,
         last_name=last_name,
         is_active=True,
+        role="etudiant",
         is_verified=False,
     )
     
@@ -203,6 +204,7 @@ async def create_or_update_google_user(
             first_name=user_data.first_name,
             last_name=user_data.last_name,
             is_active=True,
+            role="etudiant",
             is_verified=True,  # Les utilisateurs Google sont automatiquement vérifiés
         )
     

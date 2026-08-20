@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 
 from ..database import get_db
-from .. import schemas, crud_quiz
+from .. import crud_access, schemas, crud_quiz
 from ..security import get_current_active_user
 
 
@@ -50,6 +50,10 @@ async def start_quiz(
     - Message descriptif
     """
     try:
+        access = await crud_access.access_response(db, current_user, "deck", config.deck_pk)
+        if not access.allowed:
+            raise HTTPException(status_code=402, detail="Un pass actif est requis pour démarrer ce quiz")
+
         # Sélectionner les cartes intelligemment
         selected_cards, cycle_number, message = await crud_quiz.select_cards_for_quiz(
             db,
@@ -139,6 +143,9 @@ async def record_answer(
     - **is_correct**: True si la réponse est correcte, False sinon
     """
     try:
+        access = await crud_access.access_response(db, current_user, "deck", deck_pk)
+        if not access.allowed:
+            raise HTTPException(status_code=402, detail="Un pass actif est requis pour enregistrer cette réponse")
         performance = await crud_quiz.update_card_performance(
             db,
             current_user.user_pk,

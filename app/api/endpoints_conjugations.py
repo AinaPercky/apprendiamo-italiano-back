@@ -3,9 +3,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import crud_conjugations, models, schemas
+from .. import crud_access, crud_conjugations, models, schemas
 from ..database import get_db
-from ..security import get_current_active_user
+from ..security import get_current_active_user, require_admin, require_teacher_or_admin
 
 router = APIRouter(prefix="/italian-conjugations", tags=["italian conjugations"])
 
@@ -26,7 +26,11 @@ async def read_verbs(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
 ):
+    access = await crud_access.access_response(db, current_user, "conjugaison")
+    if not access.allowed:
+        raise HTTPException(status_code=402, detail="Un pass conjugaison actif est requis")
     verbs = await crud_conjugations.list_verbs(db, search, mood, tense, category, grammar_category, skip, limit)
     return [
         {
@@ -44,7 +48,14 @@ async def read_verbs(
 
 
 @router.get("/verbs/{infinitive}", response_model=schemas.ItalianVerbDetail)
-async def read_verb(infinitive: str, db: AsyncSession = Depends(get_db)):
+async def read_verb(
+    infinitive: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    access = await crud_access.access_response(db, current_user, "conjugaison")
+    if not access.allowed:
+        raise HTTPException(status_code=402, detail="Un pass conjugaison actif est requis")
     verb = await crud_conjugations.get_verb_detail(db, infinitive)
     if verb is None:
         raise HTTPException(status_code=404, detail="Verbe italien introuvable")
@@ -65,7 +76,7 @@ async def search_conjugation_forms(
 async def create_italian_verb(
     payload: schemas.ItalianVerbCreate,
     db: AsyncSession = Depends(get_db),
-    _user: models.User = Depends(get_current_active_user),
+    _user: models.User = Depends(require_teacher_or_admin),
 ):
     try:
         return crud_conjugations.serialize_verb(await crud_conjugations.create_verb(db, payload))
@@ -78,7 +89,7 @@ async def update_italian_verb(
     infinitive: str,
     payload: schemas.ItalianVerbUpdate,
     db: AsyncSession = Depends(get_db),
-    _user: models.User = Depends(get_current_active_user),
+    _user: models.User = Depends(require_teacher_or_admin),
 ):
     try:
         verb = await crud_conjugations.update_verb(db, infinitive, payload)
@@ -93,7 +104,7 @@ async def update_italian_verb(
 async def delete_italian_verb(
     infinitive: str,
     db: AsyncSession = Depends(get_db),
-    _user: models.User = Depends(get_current_active_user),
+    _user: models.User = Depends(require_teacher_or_admin),
 ):
     if not await crud_conjugations.delete_verb(db, infinitive):
         raise HTTPException(status_code=404, detail="Verbe italien introuvable")
@@ -103,7 +114,7 @@ async def delete_italian_verb(
 @router.post("/admin/import", response_model=schemas.ItalianConjugationImportReport)
 async def import_packaged_corpus(
     db: AsyncSession = Depends(get_db),
-    _user: models.User = Depends(get_current_active_user),
+    _user: models.User = Depends(require_admin),
 ):
     """Réimporte le corpus local versionné de façon idempotente, sans API tierce."""
     return await crud_conjugations.import_packaged_conjugations(db)

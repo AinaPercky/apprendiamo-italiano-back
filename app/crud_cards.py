@@ -40,9 +40,16 @@ def clean_search_query(query: str) -> str:
 
 # ==================== DECKS ====================
 
-async def create_deck(db: AsyncSession, deck: schemas.DeckCreate) -> models.Deck:
+async def create_deck(db: AsyncSession, deck: schemas.DeckCreate, created_by: int | None = None) -> models.Deck:
     id_json = deck.id_json or generate_id_json()
-    db_deck = models.Deck(id_json=id_json, name=deck.name)
+    db_deck = models.Deck(
+        id_json=id_json,
+        name=deck.name,
+        description=deck.description,
+        created_by=created_by,
+        visibility="global",
+        published_at=datetime.utcnow(),
+    )
     db.add(db_deck)
     await db.commit()
     await db.refresh(db_deck)

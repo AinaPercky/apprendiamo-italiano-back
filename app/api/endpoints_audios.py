@@ -5,6 +5,8 @@ from typing import List
 
 from .. import crud_audios, schemas
 from ..database import get_db
+from .. import models
+from ..security import require_teacher_or_admin
 
 router = APIRouter(
     prefix="/audios",
@@ -19,10 +21,16 @@ async def create_audio(
     text: str = Form(...), 
     category: str = Form(...),
     language: str = Form('it'),
-    db: AsyncSession = Depends(get_db)
+    description: str | None = Form(None),
+    deck_pk: int | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(require_teacher_or_admin),
 ):
     try:
-        return await crud_audios.create_audio_item(db, title, text, category, language)
+        return await crud_audios.create_audio_item(
+            db, title, text, category, language,
+            created_by=current_user.user_pk, deck_pk=deck_pk, description=description,
+        )
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -58,7 +66,11 @@ async def get_audio(audio_id: int, db: AsyncSession = Depends(get_db)):
     return audio_item
 
 @router.delete("/{audio_id}")
-async def delete_audio(audio_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_audio(
+    audio_id: int,
+    db: AsyncSession = Depends(get_db),
+    _current_user: models.User = Depends(require_teacher_or_admin),
+):
     deleted = await crud_audios.delete_audio_item(db, audio_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Audio not found")
