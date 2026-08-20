@@ -59,9 +59,15 @@ def split_person_line(line: str) -> tuple[str | None, str]:
     return None, cleaned
 
 
+def append_clitic(form: str, clitic: str) -> str:
+    return form if form.casefold().endswith(clitic.casefold()) else f'{form}{clitic}'
+
+
 def reflexive_form(person: str, form: str, mood: str, tense: str) -> str:
     key = person.replace('che ', '').strip()
     pronoun = PERSON_PRONOUN.get(key, 'si')
+    if form.casefold().startswith(pronoun + ' '):
+        return form
     if mood in {'Indicativo', 'Congiuntivo', 'Condizionale'} and tense in COMPOUND_TENSES:
         pieces = form.split(' ', 1)
         auxiliary = AUXILIARY_REPLACEMENTS.get(pieces[0], pieces[0])
@@ -102,15 +108,15 @@ def transform_block(base_block: dict) -> dict:
         for index, line in enumerate(lines[1:], start=1):
             form = clean(line)
             if index == 1:
-                transformed.append(f'{form}ti')
+                transformed.append(append_clitic(form, 'ti'))
             elif index == 2:
-                transformed.append(f'si {form}')
+                transformed.append(form if form.casefold().startswith('si ') else f'si {form}')
             elif index == 3:
-                transformed.append(f'{form}ci')
+                transformed.append(append_clitic(form, 'ci'))
             elif index == 4:
-                transformed.append(f'{form}vi')
+                transformed.append(append_clitic(form, 'vi'))
             elif index == 5:
-                transformed.append(f'si {form}')
+                transformed.append(form if form.casefold().startswith('si ') else f'si {form}')
         result_lines = transformed
     elif mood in {'Infinito', 'Participio', 'Gerundio'}:
         result_lines = []
@@ -123,7 +129,7 @@ def transform_block(base_block: dict) -> dict:
                 participle = parts[1] if len(parts) == 2 else form
                 result_lines.append(f'essersi {participle}')
             elif mood == 'Gerundio' and tense == 'Presente':
-                result_lines.append(form + 'si')
+                result_lines.append(append_clitic(form, 'si'))
             elif mood == 'Gerundio' and tense == 'Passato':
                 parts = form.split(' ', 1)
                 participle = parts[1] if len(parts) == 2 else form

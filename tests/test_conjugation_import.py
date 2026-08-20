@@ -1,3 +1,4 @@
+import re
 import unittest
 
 from app.conjugation_categories import CATEGORY_ORDER, GRAMMAR_CATEGORY_ORDER, category_for_infinitive, grammar_category_for_infinitive
@@ -19,6 +20,42 @@ class ConjugationCorpusTests(unittest.TestCase):
         for verb in verbs:
             self.assertTrue(verb["translation_fr"].strip(), verb["infinitive"])
             self.assertTrue(verb["translation_en"].strip(), verb["infinitive"])
+
+    def test_english_translations_use_infinitive_to(self):
+        verbs, _, _ = parse_source_dataset(CORPUS_PATH)
+        for verb in verbs:
+            self.assertRegex(verb["translation_en"].strip().casefold(), r"^to\s+", verb["infinitive"])
+
+    def test_uccidere_and_soccombere_have_six_personal_forms(self):
+        verbs, _, _ = parse_source_dataset(CORPUS_PATH)
+        by_infinitive = {verb["normalized_infinitive"]: verb for verb in verbs}
+        uccidere = by_infinitive["uccidere"]
+        self.assertEqual(len(uccidere["blocks"]), 21)
+        self.assertEqual(
+            [form["form_text"] for form in uccidere["blocks"][("Indicativo", "Presente")]["forms"]],
+            ["uccido", "uccidi", "uccide", "uccidiamo", "uccidete", "uccidono"],
+        )
+        soccombere = by_infinitive["soccombere"]
+        self.assertEqual(
+            [form["form_text"] for form in soccombere["blocks"][("Indicativo", "Presente")]["forms"]],
+            ["soccombo", "soccombi", "soccombe", "soccombiamo", "soccombete", "soccombono"],
+        )
+
+    def test_reflexive_forms_do_not_duplicate_the_reflexive_pronoun(self):
+        verbs, _, _ = parse_source_dataset(CORPUS_PATH)
+        duplicate = re.compile(r"\b(mi|ti|si|ci|vi)\s+\1\b", re.IGNORECASE)
+        for verb in verbs:
+            if not verb["normalized_infinitive"].endswith("si"):
+                continue
+            for block in verb["blocks"].values():
+                for form in block["forms"]:
+                    self.assertIsNone(duplicate.search(form["form_text"]), f"Double pronom : {verb['infinitive']} / {form['form_text']}")
+
+        arrabbiarsi = next(verb for verb in verbs if verb["normalized_infinitive"] == "arrabbiarsi")
+        imperative = [form["form_text"] for form in arrabbiarsi["blocks"][("Imperativo", "Presente")]["forms"]]
+        self.assertEqual(imperative, ["-", "arrabbiati", "si arrabbi", "arrabbiamoci", "arrabbiatevi", "si arrabbino"])
+        self.assertEqual(arrabbiarsi["blocks"][("Infinito", "Presente")]["forms"][0]["form_text"], "arrabbiarsi")
+        self.assertEqual(arrabbiarsi["blocks"][("Gerundio", "Presente")]["forms"][0]["form_text"], "arrabbiandosi")
 
     def test_non_personal_modes_have_no_personal_labels(self):
         verbs, _, _ = parse_source_dataset(CORPUS_PATH)
