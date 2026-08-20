@@ -9,6 +9,7 @@ from ..security import (
     create_refresh_token,
     get_current_user,
     get_current_active_user,
+    require_teacher_or_admin,
     ACCESS_TOKEN_EXPIRE_MINUTES,
 )
 
@@ -182,10 +183,10 @@ async def logout(
 @router.post("/decks/{deck_pk}", response_model=schemas.UserDeckResponse, status_code=status.HTTP_201_CREATED)
 async def add_deck_to_user(
     deck_pk: int,
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(require_teacher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Ajoute un deck à la collection de l'utilisateur actuel."""
+    """Ajoute un deck à la collection d'un professeur ou d'un administrateur."""
     try:
         user_deck = await crud_users.add_user_deck(db, current_user.user_pk, deck_pk)
     except ValueError as e:
@@ -227,7 +228,7 @@ async def get_all_decks_with_user_stats(
 @router.get("/decks/{deck_pk}/stats", response_model=schemas.UserDeckResponse)
 async def get_deck_stats(
     deck_pk: int,
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(require_teacher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -247,10 +248,10 @@ async def get_deck_stats(
 @router.delete("/decks/{deck_pk}")
 async def remove_deck_from_user(
     deck_pk: int,
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(require_teacher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Supprime un deck de la collection de l'utilisateur actuel."""
+    """Supprime un deck de la collection d'un professeur ou d'un administrateur."""
     success = await crud_users.remove_user_deck(db, current_user.user_pk, deck_pk)
     
     if not success:
@@ -294,7 +295,7 @@ async def get_user_deck_scores(
     deck_pk: int,
     limit: int = 100,
     offset: int = 0,
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(require_teacher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Récupère les scores de l'utilisateur actuel pour un deck spécifique."""

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException, File, UploadFile, 
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
-from .. import crud_access, crud_cards, crud_decks, crud_card_audio, crud_public_card_qr, schemas
+from .. import crud_cards, crud_decks, crud_card_audio, crud_public_card_qr, schemas
 from ..database import get_db
 from ..security import get_current_active_user, require_teacher_or_admin
 from .. import models
@@ -31,11 +31,9 @@ async def read_decks(
     current_user: models.User = Depends(get_current_active_user),
 ):
     decks = await crud_cards.get_decks(db, skip=skip, limit=limit, search=search)
-    if current_user.role != "etudiant":
-        return decks
-    for deck in decks:
-        access = await crud_access.access_response(db, current_user, "deck", deck.deck_pk)
-        if not access.allowed:
+    if current_user.role == "etudiant":
+        # Le catalogue expose uniquement les métadonnées ; les cartes sont servies par le quiz.
+        for deck in decks:
             deck.cards = []
     return decks
 
@@ -48,8 +46,8 @@ async def read_deck(
     deck = await crud_cards.get_deck(db, deck_pk)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
-    access = await crud_access.access_response(db, current_user, "deck", deck_pk)
-    if not access.allowed:
+    if current_user.role == "etudiant":
+        # Même avec un pass, l’étudiant accède aux cartes via le quiz uniquement.
         deck.cards = []
     return deck
 
@@ -96,14 +94,8 @@ async def read_cards(
     min_box: int = Query(None),
     due_only: bool = Query(False, description="Seulement les cartes à réviser aujourd'hui"),
     db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    _current_user: models.User = Depends(require_teacher_or_admin),
 ):
-    if current_user.role == "etudiant":
-        if deck_pk is None:
-            return []
-        access = await crud_access.access_response(db, current_user, "deck", deck_pk)
-        if not access.allowed:
-            raise HTTPException(status_code=402, detail="Un pass actif est requis pour accéder aux cartes")
     return await crud_cards.get_cards(
         db, skip=skip, limit=limit, deck_pk=deck_pk, search=search, 
         min_box=min_box, due_only=due_only
@@ -129,15 +121,8 @@ async def upload_card_audio(
 async def read_card_audio(
     card_pk: int,
     db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    _current_user: models.User = Depends(require_teacher_or_admin),
 ):
-    if current_user.role == "etudiant":
-        card = await crud_cards.get_card(db, card_pk)
-        if card is None:
-            raise HTTPException(status_code=404, detail="Card not found")
-        access = await crud_access.access_response(db, current_user, "deck", card.deck_pk)
-        if not access.allowed:
-            raise HTTPException(status_code=402, detail="Un pass actif est requis pour écouter cette carte")
     audio_result = await crud_card_audio.get_card_audio_bytes(db, card_pk)
     if audio_result is None:
         raise HTTPException(status_code=404, detail="Audio pronunciation not found")
@@ -165,7 +150,7 @@ async def remove_card_audio(
 async def create_public_qr_links(
     payload: schemas.CardPublicQRLinkRequest,
     db: AsyncSession = Depends(get_db),
-    _current_user: models.User = Depends(get_current_active_user),
+    _current_user: models.User = Depends(require_teacher_or_admin),
 ):
     """Crée des capacités URL opaques et signées pour l'impression de QR codes."""
     try:
@@ -206,15 +191,11 @@ async def read_public_qr_card_audio(
 async def read_card(
     card_pk: int,
     db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    _current_user: models.User = Depends(require_teacher_or_admin),
 ):
     card = await crud_cards.get_card(db, card_pk)
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
-    if current_user.role == "etudiant":
-        access = await crud_access.access_response(db, current_user, "deck", card.deck_pk)
-        if not access.allowed:
-            raise HTTPException(status_code=402, detail="Un pass actif est requis pour accéder à cette carte")
     return card
 
 @router.put("/cards/{card_pk}", response_model=schemas.Card)
