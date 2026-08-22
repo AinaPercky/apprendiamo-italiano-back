@@ -38,10 +38,16 @@ production_origins = {
     for origin in os.getenv("CORS_ORIGINS", "").split(",")
     if origin.strip()
 }
-origins = sorted(local_origins | production_origins)
+# L’origine de production reste autorisée même si la variable CORS_ORIGINS
+# n’a pas été configurée dans l’environnement Vercel.
+known_frontend_origins = {
+    "https://bella-design-lab.vercel.app",
+}
+origins = sorted(local_origins | production_origins | known_frontend_origins)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"^https://bella-design-lab(?:-[a-z0-9-]+)?\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
