@@ -1,7 +1,7 @@
 from sqlalchemy import select, func
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
-from . import models, schemas
+from . import crud_access, models, schemas
 from .security import hash_password, verify_password
 from datetime import datetime
 
@@ -589,6 +589,10 @@ async def get_user_decks(
     user_pk: int
 ) -> list[models.UserDeck]:
     """Récupère tous les decks de l'utilisateur avec les stats Anki à jour."""
+    repaired = await crud_access.sync_active_deck_subscriptions(db, user_pk)
+    if repaired:
+        await db.commit()
+
     result = await db.execute(
         select(models.UserDeck)
         .options(joinedload(models.UserDeck.deck))

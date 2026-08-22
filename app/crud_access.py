@@ -133,6 +133,72 @@ async def list_order_items(db: AsyncSession, order_pk: int) -> list[models.Order
     return list((await db.execute(select(models.OrderItem).where(models.OrderItem.order_pk == order_pk).order_by(models.OrderItem.order_item_pk))).scalars().all())
 
 
+async def ensure_user_deck_for_subscription(
+    db: AsyncSession,
+    user_pk: int,
+    product_type: str,
+    product_id: int | None,
+) -> models.UserDeck | None:
+    """Matérialise un deck activé dans la collection de l'étudiant, sans doublon."""
+    if product_type != "deck" or product_id is None:
+        return None
+
+    deck = await db.get(models.Deck, product_id)
+    if deck is None:
+        raise ValueError("Deck introuvable")
+
+    result = await db.execute(
+        select(models.UserDeck).where(
+            models.UserDeck.user_pk == user_pk,
+            models.UserDeck.deck_pk == product_id,
+        )
+    )
+    user_deck = result.scalars().first()
+    if user_deck is not None:
+        return user_deck
+
+    user_deck = models.UserDeck(user_pk=user_pk, deck_pk=product_id)
+    db.add(user_deck)
+    await db.flush()
+    return user_deck
+
+
+async def sync_active_deck_subscriptions(
+    db: AsyncSession,
+    user_pk: int,
+) -> int:
+    """Répare les anciennes activations deck qui n'avaient pas créé `user_decks`."""
+    now = utcnow()
+    result = await db.execute(
+        select(models.Subscription).where(
+            models.Subscription.user_pk == user_pk,
+            models.Subscription.product_type == "deck",
+            models.Subscription.product_id.is_not(None),
+            models.Subscription.status == "active",
+            models.Subscription.start_at <= now,
+            models.Subscription.end_at > now,
+        )
+    )
+    created = 0
+    for subscription in result.scalars().all():
+        existing = await db.execute(
+            select(models.UserDeck.user_deck_pk).where(
+                models.UserDeck.user_pk == subscription.user_pk,
+                models.UserDeck.deck_pk == subscription.product_id,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            continue
+        await ensure_user_deck_for_subscription(
+            db,
+            user_pk=subscription.user_pk,
+            product_type=subscription.product_type,
+            product_id=subscription.product_id,
+        )
+        created += 1
+    return created
+
+
 async def activate_order(
     db: AsyncSession,
     admin: models.User,
@@ -161,6 +227,12 @@ async def activate_order(
             order_item_pk=item.order_item_pk,
             activated_by=admin.user_pk,
         ))
+        await ensure_user_deck_for_subscription(
+            db,
+            user_pk=order.user_pk,
+            product_type=item.target_type,
+            product_id=item.target_id,
+        )
         item.status = "activated"
         item.activated_at = now
         activated += 1
@@ -193,6 +265,12 @@ async def create_manual_subscription(
         admin_note=payload.admin_note,
     )
     db.add(subscription)
+    await ensure_user_deck_for_subscription(
+        db,
+        user_pk=payload.user_pk,
+        product_type=payload.product_type,
+        product_id=payload.product_id,
+    )
     db.add(models.AuditLog(actor_user_pk=admin.user_pk, action="manual_subscription_created", entity_type="subscription"))
     await db.commit()
     await db.refresh(subscription)
@@ -207,7 +285,12 @@ async def list_subscriptions(db: AsyncSession, user: models.User, user_pk: int |
         .order_by(models.Subscription.end_at.desc())
         .limit(200)
     )
-    return list(result.scalars().all())
+    subscriptions = list(result.scalars().all())
+    if target_user_pk == user.user_pk:
+        repaired = await sync_active_deck_subscriptions(db, target_user_pk)
+        if repaired:
+            await db.commit()
+    return subscriptions
 
 
 async def expire_subscriptions(db: AsyncSession) -> int:

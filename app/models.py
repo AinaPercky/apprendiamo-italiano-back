@@ -195,6 +195,9 @@ class User(Base):
 class UserDeck(Base):
     """Association entre utilisateurs et decks (flashcards)"""
     __tablename__ = "user_decks"
+    __table_args__ = (
+        UniqueConstraint("user_pk", "deck_pk", name="uq_user_decks_user_deck"),
+    )
 
     user_deck_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
     user_pk = Column(Integer, ForeignKey("users.user_pk", ondelete="CASCADE"), nullable=False, index=True)
