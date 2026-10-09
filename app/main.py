@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .database import lifespan
+from .database import get_db_status, lifespan
 from .api import endpoints_cards, endpoints_audios, endpoints_users, endpoints_quiz, endpoints_conjugations, endpoints_access
 from .crud_audios import AUDIO_DIR
 
@@ -76,3 +76,9 @@ app.include_router(endpoints_access.router)
 @app.get("/")
 async def root():
     return {"message": "Bienvenue sur le Backend Unifié Apprendiamo Italiano"}
+
+
+@app.get("/health/db", tags=["health"])
+async def database_health():
+    """État des deux bases et de l’outbox de réplication."""
+    return await get_db_status()
