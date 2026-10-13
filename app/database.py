@@ -28,7 +28,9 @@ def _normalize_db_url(url: str) -> tuple[str, dict]:
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
     ssl_mode = query.pop("sslmode", "")
     query.pop("channel_binding", None)
-    connect_args = {"ssl": True} if ssl_mode.lower() in {"require", "verify-ca", "verify-full"} else {}
+    # asyncpg attend ici le mode ``require`` : ``ssl=True`` active une
+    # vérification de certificat qui échoue avec le certificat du pooler.
+    connect_args = {"ssl": "require"} if ssl_mode.lower() in {"require", "verify-ca", "verify-full"} else {}
     normalized = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
     return normalized, connect_args
 
