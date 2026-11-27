@@ -5,6 +5,7 @@ Le navigateur transmet uniquement response.credential. Le backend vérifie
 la signature, l'audience et l'expiration auprès des bibliothèques Google
 avant d'utiliser les claims d'identité.
 """
+import asyncio
 import logging
 import os
 import time
@@ -36,7 +37,8 @@ async def verify_google_token(token: str) -> dict:
         raise GoogleOAuthConfigurationError("Google OAuth is not configured")
 
     try:
-        claims = id_token.verify_oauth2_token(
+        claims = await asyncio.to_thread(
+            id_token.verify_oauth2_token,
             token.strip(),
             requests.Request(),
             GOOGLE_CLIENT_ID,
@@ -57,7 +59,12 @@ async def verify_google_token(token: str) -> dict:
     }:
         raise GoogleOAuthError("Google credential has an invalid issuer")
 
-    if not claims.get("sub") or not claims.get("email"):
+    if (
+        not isinstance(claims.get("sub"), str)
+        or not claims["sub"].strip()
+        or not isinstance(claims.get("email"), str)
+        or not claims["email"].strip()
+    ):
         raise GoogleOAuthError("Google credential is missing required identity claims")
 
     if claims.get("email_verified") is not True:
