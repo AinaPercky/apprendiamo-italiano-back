@@ -34,8 +34,8 @@ REFRESH_TOKEN_EXPIRE_DAYS=7
 3. Configurer l'écran de consentement OAuth 
 4. Créer des identifiants OAuth 2.0 (Type: Application Web)
 5. Ajouter les origines JavaScript autorisées :
-   - `http://localhost:8000` (développement)
-   - `https://yourdomain.com` (production)
+   - `http://localhost:5173` (Studio en développement)
+   - `https://bella-design-lab.vercel.app` (Studio en production)
 6. Copier le Client ID dans la variable serveur `GOOGLE_CLIENT_ID` ; aucun Client Secret n'est utilisé pour la vérification des ID tokens.
 
 ---
