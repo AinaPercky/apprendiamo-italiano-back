@@ -11,7 +11,7 @@
 8. Le JWT délivré contient `aud=studio`, `client_app=studio` et `token_use=app_access`.
 
 ## Protection des routes
-Les routes de quiz et les routes d'activité utilisateur du Studio exigent désormais ce JWT applicatif. Les routes générales de profil restent compatibles avec les anciens jetons pendant la transition. Les permissions de gestion et les opérations réservées aux professeurs/administrateurs exigent aussi un jeton Studio.
+Lorsque `REQUIRE_STUDIO_APP_TOKEN=true`, les routes de quiz, les routes d'activité utilisateur et les opérations réservées aux professeurs/administrateurs exigent ce JWT applicatif. Tant que le drapeau est absent ou vaut `false`, les anciens jetons restent temporairement acceptés sur ces routes afin de permettre un déploiement sans interruption.
 
 ## Registre et migration
 La migration `p006_app_identity_oauth` :
@@ -26,7 +26,7 @@ Cette migration dépend de `p006_user_card_progress`, lui-même dépendant de `a
 - L'origine navigateur et CORS protègent le parcours SPA contre les requêtes inter-sites, mais ne constituent pas une authentification serveur-à-serveur.
 - Les applications mobiles et serveurs nécessiteront des profils d'identité adaptés ; aucune identité ne leur est accordée par ce flux.
 - Les URL Vercel Preview non listées ne sont pas autorisées. Utiliser le domaine de production stable ou ajouter explicitement un callback validé via le registre.
-- Les jetons génériques existants peuvent toujours consulter les routes de profil, mais ne peuvent plus enregistrer ou lire les activités réservées au Studio.
+- Après activation de `REQUIRE_STUDIO_APP_TOKEN=true`, les jetons génériques existants peuvent toujours consulter les routes de profil et les lectures de contenu non personnalisé, mais ne peuvent plus enregistrer ou lire les activités réservées au Studio.
 
 ## Déploiement progressif sans interruption
 1. Fusionner les PR backend et Studio après revue.
