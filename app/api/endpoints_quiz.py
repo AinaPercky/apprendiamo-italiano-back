@@ -131,7 +131,7 @@ async def record_answer(
     card_pk: int,
     deck_pk: int,
     is_correct: bool,
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(get_current_studio_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -176,7 +176,7 @@ async def complete_quiz(
     session_pk: int,
     correct_count: int = Query(..., ge=0),
     total_questions: int = Query(..., ge=0),
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(get_current_studio_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -229,7 +229,7 @@ async def complete_quiz(
 async def get_quiz_sessions(
     deck_pk: int = None,
     limit: int = 50,
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(get_current_studio_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -252,7 +252,7 @@ async def get_quiz_sessions(
 @router.get("/performances/{deck_pk}", response_model=list[schemas.CardPerformanceResponse])
 async def get_deck_performances(
     deck_pk: int,
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(get_current_studio_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -279,7 +279,7 @@ async def get_deck_performances(
 async def has_seen_card(
     deck_pk: int,
     card_pk: int,
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(get_current_studio_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
