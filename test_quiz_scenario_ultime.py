@@ -274,7 +274,8 @@ class QuizUltimateScenario:
             db,
             session.session_pk,
             correct_answers,
-            total_questions
+            total_questions,
+            user_pk=self.user.user_pk
         )
         print(f"   ✅ Session finalisée")
 
