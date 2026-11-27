@@ -124,7 +124,6 @@ async def exchange_authorization_code(
         raise HTTPException(status_code=400, detail="Échange OAuth invalide")
     try:
         client_id = validate_app_code(client_id)
-        verifier_ascii = code_verifier.encode("ascii")
     except (ValueError, UnicodeEncodeError) as exc:
         raise HTTPException(status_code=400, detail="Client ou vérificateur PKCE invalide") from exc
 
