@@ -16,15 +16,15 @@ class FakeResult:
 
 
 class FakeDatabase:
-    def __init__(self, performance):
-        self.performance = performance
+    def __init__(self, *results):
+        self.results = list(results)
         self.statements = []
         self.commits = 0
         self.added = []
 
     async def execute(self, statement):
         self.statements.append(statement)
-        return FakeResult(self.performance)
+        return FakeResult(self.results.pop(0))
 
     def add(self, value):
         self.added.append(value)
@@ -59,7 +59,14 @@ async def test_quiz_anki_state_is_updated_on_the_user_performance_not_the_shared
     first_user = make_performance(11)
     second_user = make_performance(22)
     first_db = FakeDatabase(first_user)
-    second_db = FakeDatabase(second_user)
+    user_deck = SimpleNamespace(
+        total_points=0,
+        attempt_count=0,
+        correct_count=0,
+        successful_attempts=0,
+        total_attempts=0,
+    )
+    second_db = FakeDatabase(second_user, user_deck)
 
     await crud_quiz.update_card_performance(first_db, 11, 77, 9, False)
     await crud_quiz.update_card_performance(second_db, 22, 77, 9, True)
