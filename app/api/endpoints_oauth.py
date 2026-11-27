@@ -127,6 +127,14 @@ async def exchange_authorization_code(
     except (ValueError, UnicodeEncodeError) as exc:
         raise HTTPException(status_code=400, detail="Client ou vérificateur PKCE invalide") from exc
 
+    app_result = await db.execute(select(client_applications).where(client_applications.c.code == client_id))
+    app_row = app_result.mappings().first()
+    if not app_row or not app_row["is_active"] or app_row["client_type"] != "public_web":
+        raise HTTPException(status_code=400, detail="Client OAuth désactivé ou inconnu")
+    current_redirects = json.loads(app_row["allowed_redirect_uris"] or "[]")
+    if redirect_uri not in current_redirects:
+        raise HTTPException(status_code=400, detail="URI de redirection non autorisée")
+
     code_hash = hashlib.sha256(code.encode("ascii", errors="ignore")).hexdigest()
     now = datetime.now(timezone.utc)
     result = await db.execute(select(models.OAuthAuthorizationCode).where(
