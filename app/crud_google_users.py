@@ -26,6 +26,11 @@ async def create_or_update_google_user(
     user = result.scalar_one_or_none()
 
     if user:
+        # Ne pas actualiser les attributs d'un compte désactivé lors d'une
+        # tentative de connexion ; l'endpoint retournera ensuite 403.
+        if not user.is_active:
+            return user
+
         user.google_email = identity.google_email
         user.google_picture = identity.google_picture
         if identity.first_name:
