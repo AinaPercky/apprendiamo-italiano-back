@@ -6,7 +6,7 @@ from typing import List
 
 from .. import crud_access, crud_cards, crud_decks, crud_card_audio, crud_public_card_qr, schemas
 from ..database import get_db
-from ..security import get_current_active_user, require_teacher_or_admin
+from ..security import get_current_active_user, get_current_studio_user, require_teacher_or_admin
 from .. import models
 
 router = APIRouter(
@@ -98,7 +98,7 @@ async def read_cards(
     min_box: int = Query(None),
     due_only: bool = Query(False, description="Seulement les cartes à réviser aujourd'hui"),
     db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    current_user: models.User = Depends(get_current_studio_user),
 ):
     if current_user.role == "etudiant":
         if deck_pk is None:
@@ -213,7 +213,7 @@ async def read_public_qr_card_audio(
 async def read_card(
     card_pk: int,
     db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    current_user: models.User = Depends(get_current_studio_user),
 ):
     card = await crud_cards.get_card(db, card_pk)
     if not card:
