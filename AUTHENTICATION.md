@@ -17,7 +17,7 @@ Tous les endpoints sécurisés utilisent des tokens JWT (JSON Web Tokens) pour l
 
 ```bash
 # Clé secrète pour signer les tokens JWT
-SECRET_KEY=your-secret-key-change-in-production
+SECRET_KEY=your-long-random-secret
 
 # Configuration Google OAuth
 GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
@@ -27,6 +27,13 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 REFRESH_TOKEN_EXPIRE_DAYS=7
 ```
+
+
+### Politique de sécurité JWT
+
+La variable SECRET_KEY est obligatoire : le backend refuse de démarrer si elle est absente ou vide. Utilisez une valeur aléatoire longue, stockée uniquement dans l'environnement du serveur ou dans .env.local. Ne la commitez jamais.
+
+Les nouveaux access tokens portent le claim type=access. Les access tokens historiques sans claim type restent acceptés pendant leur durée de vie résiduelle (30 minutes maximum). Les refresh tokens portant type=refresh sont refusés sur les endpoints protégés. Ne faites pas tourner SECRET_KEY pendant ce déploiement : cette clé signe également les liens QR publics.
 
 ### Obtenir les identifiants Google OAuth
 
