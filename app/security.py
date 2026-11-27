@@ -127,6 +127,12 @@ async def get_current_studio_user(
     current_user: models.User = Depends(get_current_user),
 ) -> models.User:
     """Require a signed access token explicitly issued for the central Studio."""
+    # Roll out enforcement only after the Studio frontend has completed its PKCE migration.
+    # Set REQUIRE_STUDIO_APP_TOKEN=true to reject legacy generic user tokens on Studio activity routes.
+    enforcement = os.getenv("REQUIRE_STUDIO_APP_TOKEN", "false").strip().lower()
+    if enforcement not in {"1", "true", "yes", "on"}:
+        return current_user
+
     payload = verify_token(credentials.credentials)
     if (
         payload.get("type") != "access"
