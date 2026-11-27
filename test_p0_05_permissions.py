@@ -33,7 +33,11 @@ def test_valid_client_application_codes(value):
     assert validate_app_code(value) == value
 
 
-@pytest.mark.parametrize("value", ["", "AStudio", "with space", "a", "bad_code"])
+def test_client_application_code_is_normalized():
+    assert validate_app_code("AStudio") == "astudio"
+
+
+@pytest.mark.parametrize("value", ["", "with space", "a", "bad_code"])
 def test_invalid_client_application_codes(value):
     with pytest.raises(ValueError):
         validate_app_code(value)
@@ -78,7 +82,7 @@ async def test_inactive_client_application_is_rejected():
 
 @pytest.mark.asyncio
 async def test_registered_client_origin_is_checked():
-    row = {"code": "studio", "is_active": True, "allowed_origins": json.dumps(["https://studio.example"])}
+    row = {"code": "studio", "client_type": "public_web", "is_active": True, "allowed_origins": json.dumps(["https://studio.example"])}
     with pytest.raises(HTTPException) as error:
         await get_client_application(x_client_app="studio", origin="https://evil.example", db=FakeDb(row))
     assert error.value.status_code == 403
