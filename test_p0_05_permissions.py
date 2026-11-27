@@ -90,7 +90,7 @@ async def test_registered_client_origin_is_checked():
 
 @pytest.mark.asyncio
 async def test_registered_client_origin_is_accepted():
-    row = {"code": "studio", "is_active": True, "allowed_origins": json.dumps(["https://studio.example"])}
+    row = {"code": "studio", "client_type": "public_web", "is_active": True, "allowed_origins": json.dumps(["https://studio.example"])}
     result = await get_client_application(x_client_app="studio", origin="https://studio.example", db=FakeDb(row))
     assert result["code"] == "studio"
 
