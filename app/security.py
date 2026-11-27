@@ -71,7 +71,7 @@ def create_refresh_token(data: dict) -> str:
 def verify_token(token: str) -> dict:
     """Vérifie un JWT et refuse les tokens qui ne sont pas des tokens d'accès."""
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_aud": False})
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -159,14 +159,14 @@ def require_roles(*allowed_roles: str):
     return dependency
 
 
-async def require_admin(current_user: models.User = Depends(get_current_active_user)) -> models.User:
+async def require_admin(current_user: models.User = Depends(get_current_studio_user)) -> models.User:
     from .permissions import has_permission
     if not has_permission(current_user, "client_apps:manage"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Droits administrateur requis")
     return current_user
 
 
-async def require_teacher_or_admin(current_user: models.User = Depends(get_current_active_user)) -> models.User:
+async def require_teacher_or_admin(current_user: models.User = Depends(get_current_studio_user)) -> models.User:
     from .permissions import has_permission
     if not has_permission(current_user, "content:create"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Droits professeur ou administrateur requis")
