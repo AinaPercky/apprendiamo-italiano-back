@@ -361,8 +361,11 @@ class AuditLog(Base):
 
 
 class CardPerformance(Base):
-    """Suivi des performances utilisateur par carte pour l'algorithme de sélection intelligente"""
+    """Performances et état de révision propres à un utilisateur et une carte."""
     __tablename__ = "card_performance"
+    __table_args__ = (
+        UniqueConstraint("user_pk", "card_pk", name="uq_card_performance_user_card"),
+    )
 
     performance_pk = Column(Integer, primary_key=True, autoincrement=True, index=True)
     user_pk = Column(Integer, ForeignKey("users.user_pk", ondelete="CASCADE"), nullable=False, index=True)
@@ -377,6 +380,13 @@ class CardPerformance(Base):
     # Score pour la priorisation : (incorrect_count * 2) - correct_count
     # Plus le score est élevé, plus la carte doit être révisée
     priority_score = Column(Float, default=0.0, nullable=False)
+
+    # État Anki individuel : ne jamais stocker ces valeurs dans la carte partagée.
+    easiness = Column(Float, nullable=False, default=2.5, server_default="2.5")
+    interval = Column(Integer, nullable=False, default=0, server_default="0")
+    consecutive_correct = Column(Integer, nullable=False, default=0, server_default="0")
+    next_review = Column(DateTime, nullable=False, default=datetime.utcnow, server_default="CURRENT_TIMESTAMP")
+    box = Column(Integer, nullable=False, default=0, server_default="0")
     
     # Timestamps
     last_reviewed_at = Column(DateTime, nullable=True)
