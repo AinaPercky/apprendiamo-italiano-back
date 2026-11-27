@@ -423,7 +423,10 @@ async def complete_quiz_session(
             deck_pk=session.deck_pk,
             correct_count=0,
             attempt_count=0,
-            cards_mastered=0
+            cards_mastered=0,
+            total_attempts=0,
+            successful_attempts=0,
+            total_points=0
         )
         db.add(user_deck)
 
