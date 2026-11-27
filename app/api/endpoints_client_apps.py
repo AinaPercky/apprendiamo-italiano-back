@@ -147,14 +147,21 @@ async def update_client_application(
         raise HTTPException(status_code=400, detail="Les champs de mise à jour ne peuvent pas être null")
     if values.get("allowed_redirect_uris") is not None:
         values["allowed_redirect_uris"] = json.dumps(values["allowed_redirect_uris"])
-    if values.get("allowed_origins") is not None:
+    if "allowed_origins" in values or "allowed_redirect_uris" in values:
         current = await db.execute(select(client_applications).where(client_applications.c.code == code))
         existing = current.mappings().first()
         if existing is None:
             raise HTTPException(status_code=404, detail="Application cliente introuvable")
-        if existing["client_type"] == "public_web" and not values["allowed_origins"]:
+        origins = values.get("allowed_origins", json.loads(existing["allowed_origins"] or "[]"))
+        redirects = values.get("allowed_redirect_uris", json.loads(existing["allowed_redirect_uris"] or "[]"))
+        if existing["client_type"] == "public_web" and not origins:
             raise HTTPException(status_code=400, detail="Une application web publique doit conserver au moins une origine autorisée")
-        values["allowed_origins"] = json.dumps(values["allowed_origins"])
+        if any(f"{urlsplit(uri).scheme}://{urlsplit(uri).netloc}" not in set(origins) for uri in redirects):
+            raise HTTPException(status_code=400, detail="Chaque URI de redirection doit appartenir à une origine autorisée")
+        if "allowed_origins" in values:
+            values["allowed_origins"] = json.dumps(origins)
+        if "allowed_redirect_uris" in values:
+            values["allowed_redirect_uris"] = json.dumps(redirects)
     values["updated_at"] = datetime.utcnow()
     result = await db.execute(update(client_applications).where(client_applications.c.code == code).values(**values).returning(client_applications))
     row = result.mappings().first()
