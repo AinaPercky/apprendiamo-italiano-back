@@ -3,6 +3,7 @@
 X-Client-App is an identifier, not a credential. It is suitable for routing,
 origin checks and audit attribution only; it must never grant authorization.
 """
+import json
 import re
 from datetime import datetime
 from typing import Optional
@@ -16,7 +17,7 @@ from .database import Base, get_db
 client_applications = Table(
     "client_applications", Base.metadata,
     Column("client_application_pk", Integer, primary_key=True, autoincrement=True),
-    Column("code", String(64), nullable=False, unique=True, index=True),
+    Column("code", String(64), nullable=False, unique=True),
     Column("name", String(120), nullable=False),
     Column("client_type", String(24), nullable=False),
     Column("description", Text, nullable=True),
@@ -60,5 +61,3 @@ async def get_client_application(
         raise HTTPException(status_code=403, detail="Origine non autorisée pour cette application")
     return dict(row)
 
-
-import json
