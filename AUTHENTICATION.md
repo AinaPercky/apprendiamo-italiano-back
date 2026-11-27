@@ -52,7 +52,7 @@ Après l'authentification utilisateur, le Studio échange le jeton utilisateur t
 - `POST /api/oauth/authorize` : formulaire navigateur, vérifie l'origine, le client actif et l'URI de callback exacte, puis redirige vers le callback enregistré ;
 - `POST /api/oauth/token` : échange le code à usage unique et le vérificateur PKCE contre un JWT applicatif.
 
-Le JWT final est limité à `aud=studio` et `client_app=studio`. Les routes d'activité et les opérations d'administration exigent ce jeton. Les jetons génériques historiques restent acceptés sur les routes de profil et de lecture de contenu non personnalisé pendant la transition.
+Le JWT final est limité à `aud=studio` et `client_app=studio`. Lorsque `REQUIRE_STUDIO_APP_TOKEN=true`, les routes d'activité et les opérations d'administration exigent ce jeton. Le drapeau reste désactivé pendant le déploiement initial pour préserver les anciennes sessions ; les jetons génériques historiques restent alors acceptés temporairement.
 
 La migration `p006_app_identity_oauth` doit être appliquée après `add_client_applications_registry` et `p006_user_card_progress`, avant le déploiement coordonné du backend et du Studio. Elle n'est pas appliquée automatiquement.
 
