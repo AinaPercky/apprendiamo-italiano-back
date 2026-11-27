@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .database import get_db_status, lifespan
-from .api import endpoints_cards, endpoints_audios, endpoints_users, endpoints_quiz, endpoints_conjugations, endpoints_access, endpoints_client_apps
+from .api import endpoints_cards, endpoints_audios, endpoints_users, endpoints_quiz, endpoints_conjugations, endpoints_access, endpoints_client_apps, endpoints_oauth
 from .crud_audios import AUDIO_DIR
 
 logging.basicConfig(level=logging.INFO)
@@ -50,6 +50,7 @@ app.include_router(endpoints_quiz.router)
 app.include_router(endpoints_conjugations.router)
 app.include_router(endpoints_access.router)
 app.include_router(endpoints_client_apps.router)
+app.include_router(endpoints_oauth.router)
 
 
 @app.get("/")
