@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from app import crud_quiz, models
+from app import crud_cards, crud_quiz, models
 
 
 class FakeResult:
@@ -98,3 +98,27 @@ def test_card_performance_model_contains_user_scoped_anki_fields():
         for constraint in models.CardPerformance.__table__.constraints
     }
     assert "uq_card_performance_user_card" in constraints
+
+
+
+@pytest.mark.asyncio
+async def test_student_card_due_filter_uses_the_authenticated_users_progress():
+    class QueryResult:
+        def all(self):
+            return []
+
+    class QueryDatabase:
+        def __init__(self):
+            self.statement = None
+
+        async def execute(self, statement):
+            self.statement = statement
+            return QueryResult()
+
+    db = QueryDatabase()
+    await crud_cards.get_cards(db, deck_pk=9, due_only=True, user_pk=11)
+
+    sql = str(db.statement.compile(dialect=postgresql.dialect()))
+    assert "card_performance.user_pk" in sql
+    assert "card_performance.next_review" in sql
+    assert "cards.next_review" not in sql
