@@ -2,6 +2,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, or_, and_, func
 from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 from . import models, schemas
 import uuid
 from typing import List, Optional
@@ -265,38 +266,84 @@ async def get_cards(
     min_box: Optional[int] = None,
     tags_filter: Optional[List[str]] = None,
     due_only: bool = False,
+    user_pk: Optional[int] = None,
 ) -> List[models.Card]:
-    # On commence par sélectionner les cartes
-    stmt = select(models.Card).options(selectinload(models.Card.audio))
-    # JOINTURE IMPORTANTE : Si on filtre par deck, on passe par la table d'association
+    # Pour un apprenant, les champs Anki sont chargés depuis son propre état.
+    user_scoped = user_pk is not None
+    if user_scoped:
+        stmt = (
+            select(models.Card, models.CardPerformance)
+            .outerjoin(
+                models.CardPerformance,
+                and_(
+                    models.CardPerformance.card_pk == models.Card.card_pk,
+                    models.CardPerformance.user_pk == user_pk,
+                ),
+            )
+            .options(selectinload(models.Card.audio))
+        )
+    else:
+        stmt = select(models.Card).options(selectinload(models.Card.audio))
+
+    # JOINTURE IMPORTANTE : Si on filtre par deck, on passe par la table d'association.
     if deck_pk:
-        stmt = stmt.join(models.deck_cards, models.Card.card_pk == models.deck_cards.c.card_pk)\
-                   .where(models.deck_cards.c.deck_pk == deck_pk)
-    
+        stmt = stmt.join(
+            models.deck_cards, models.Card.card_pk == models.deck_cards.c.card_pk
+        ).where(models.deck_cards.c.deck_pk == deck_pk)
+
     if search:
         stmt = stmt.where(or_(
             models.Card.front.ilike(f"%{search}%"),
             models.Card.back.ilike(f"%{search}%")
         ))
-    if min_box is not None:
-        stmt = stmt.where(models.Card.box >= min_box)
-    if tags_filter:
-        stmt = stmt.where(models.Card.tags.contains(tags_filter))
-    if due_only:
-        stmt = stmt.where(models.Card.next_review <= datetime.now(timezone.utc))
+    if user_scoped:
+        if min_box is not None:
+            stmt = stmt.where(models.CardPerformance.box >= min_box)
+        if due_only:
+            stmt = stmt.where(
+                or_(
+                    models.CardPerformance.performance_pk.is_(None),
+                    models.CardPerformance.next_review <= datetime.now(timezone.utc),
+                )
+            )
+        stmt = stmt.order_by(models.CardPerformance.next_review.nulls_first())
+    else:
+        if min_box is not None:
+            stmt = stmt.where(models.Card.box >= min_box)
+        if due_only:
+            stmt = stmt.where(models.Card.next_review <= datetime.now(timezone.utc))
+        stmt = stmt.order_by(models.Card.next_review)
 
-    stmt = stmt.offset(skip).limit(limit).order_by(models.Card.next_review)
-
+    stmt = stmt.offset(skip).limit(limit)
     result = await db.execute(stmt)
-    cards = result.scalars().all()
-    
-    # Pour la compatibilité Frontend : Si on a filtré par un deck spécifique,
-    # on s'assure que l'attribut .deck_pk de chaque objet carte renvoyé correspond à ce deck.
-    # C'est une "vue" contextuelle de la carte.
+
+    if user_scoped:
+        rows = result.all()
+        cards = []
+        for card, progress in rows:
+            # Présenter l'état individuel dans le contrat Card historique,
+            # sans marquer l'objet ORM comme modifié.
+            set_committed_value(card, "box", progress.box if progress else 0)
+            set_committed_value(card, "easiness", progress.easiness if progress else 2.5)
+            set_committed_value(card, "interval", progress.interval if progress else 0)
+            set_committed_value(
+                card, "consecutive_correct",
+                progress.consecutive_correct if progress else 0,
+            )
+            set_committed_value(
+                card, "next_review",
+                progress.next_review if progress else datetime.now(timezone.utc),
+            )
+            cards.append(card)
+    else:
+        cards = result.scalars().all()
+
+    # Pour la compatibilité Frontend : si un deck est demandé, exposer son ID
+    # dans le champ deck_pk historique de chaque carte.
     if deck_pk:
         for card in cards:
-            card.deck_pk = deck_pk
-            
+            set_committed_value(card, "deck_pk", deck_pk)
+
     return cards
 
 
@@ -339,20 +386,44 @@ async def delete_card(db: AsyncSession, card_pk: int) -> bool:
 # ==================== FONCTION BONUS : Cartes dues aujourd'hui (pour le mode révision) ====================
 
 async def get_due_cards(db: AsyncSession, user_pk: int, limit: int = 50) -> List[models.Card]:
-    """Retourne les cartes à réviser aujourd'hui pour l'utilisateur (via user_decks)."""
-    # M2M Support: User -> UserDeck -> Deck -> deck_cards -> Card
-    stmt = select(models.Card)\
-        .join(models.deck_cards, models.deck_cards.c.card_pk == models.Card.card_pk)\
-        .join(models.UserDeck, models.UserDeck.deck_pk == models.deck_cards.c.deck_pk)\
+    """Retourne les cartes dues ou nouvelles selon la progression individuelle."""
+    stmt = (
+        select(models.Card, models.CardPerformance)
+        .join(models.deck_cards, models.deck_cards.c.card_pk == models.Card.card_pk)
+        .join(models.UserDeck, models.UserDeck.deck_pk == models.deck_cards.c.deck_pk)
+        .outerjoin(
+            models.CardPerformance,
+            and_(
+                models.CardPerformance.card_pk == models.Card.card_pk,
+                models.CardPerformance.user_pk == user_pk,
+            ),
+        )
         .where(
             models.UserDeck.user_pk == user_pk,
-            models.Card.next_review <= datetime.now(timezone.utc)
-        )\
-        .order_by(models.Card.next_review)\
+            or_(
+                models.CardPerformance.performance_pk.is_(None),
+                models.CardPerformance.next_review <= datetime.now(timezone.utc),
+            ),
+        )
+        .order_by(models.CardPerformance.next_review.nulls_first())
         .limit(limit)
-
+    )
     result = await db.execute(stmt)
-    return result.scalars().all()
+    cards = []
+    for card, progress in result.all():
+        set_committed_value(card, "box", progress.box if progress else 0)
+        set_committed_value(card, "easiness", progress.easiness if progress else 2.5)
+        set_committed_value(card, "interval", progress.interval if progress else 0)
+        set_committed_value(
+            card, "consecutive_correct",
+            progress.consecutive_correct if progress else 0,
+        )
+        set_committed_value(
+            card, "next_review",
+            progress.next_review if progress else datetime.now(timezone.utc),
+        )
+        cards.append(card)
+    return cards
 
 
 # ==================== IMPORTATION EN LOT (UPSERT) ====================
