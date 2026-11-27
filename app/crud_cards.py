@@ -303,7 +303,7 @@ async def get_cards(
             stmt = stmt.where(
                 or_(
                     models.CardPerformance.performance_pk.is_(None),
-                    models.CardPerformance.next_review <= datetime.now(timezone.utc),
+                    models.CardPerformance.next_review <= datetime.utcnow(),
                 )
             )
         stmt = stmt.order_by(models.CardPerformance.next_review.nulls_first())
@@ -332,7 +332,7 @@ async def get_cards(
             )
             set_committed_value(
                 card, "next_review",
-                progress.next_review if progress else datetime.now(timezone.utc),
+                progress.next_review if progress else datetime.utcnow(),
             )
             cards.append(card)
     else:
