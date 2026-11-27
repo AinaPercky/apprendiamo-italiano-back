@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 from ..client_applications import client_applications, validate_app_code
 from ..database import get_db
 from ..permissions import require_permission
+from .. import models
 
 router = APIRouter(prefix="/api/admin/client-applications", tags=["client applications"])
 
@@ -82,7 +83,7 @@ async def list_client_applications(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_client_application(
     payload: ClientApplicationCreate,
-    _admin=Depends(require_permission("client_apps:manage")),
+    admin=Depends(require_permission("client_apps:manage")),
     db: AsyncSession = Depends(get_db),
 ):
     values = payload.model_dump()
@@ -91,18 +92,20 @@ async def create_client_application(
     values.update({"created_at": now, "updated_at": now})
     try:
         result = await db.execute(insert(client_applications).values(**values).returning(client_applications))
+        created = result.mappings().one()
+        db.add(models.AuditLog(actor_user_pk=admin.user_pk, action="client_application_created", entity_type="client_application", entity_id=created["client_application_pk"], details=json.dumps({"code": created["code"], "client_type": created["client_type"]})))
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Ce code d'application existe déjà") from exc
-    return _serialize(result.mappings().one())
+    return _serialize(created)
 
 
 @router.patch("/{code}")
 async def update_client_application(
     code: str,
     payload: ClientApplicationUpdate,
-    _admin=Depends(require_permission("client_apps:manage")),
+    admin=Depends(require_permission("client_apps:manage")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -112,7 +115,15 @@ async def update_client_application(
     values = payload.model_dump(exclude_unset=True)
     if not values:
         raise HTTPException(status_code=400, detail="Aucune modification fournie")
+    if any(value is None for value in values.values()):
+        raise HTTPException(status_code=400, detail="Les champs de mise à jour ne peuvent pas être null")
     if values.get("allowed_origins") is not None:
+        current = await db.execute(select(client_applications).where(client_applications.c.code == code))
+        existing = current.mappings().first()
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Application cliente introuvable")
+        if existing["client_type"] == "public_web" and not values["allowed_origins"]:
+            raise HTTPException(status_code=400, detail="Une application web publique doit conserver au moins une origine autorisée")
         values["allowed_origins"] = json.dumps(values["allowed_origins"])
     values["updated_at"] = datetime.utcnow()
     result = await db.execute(update(client_applications).where(client_applications.c.code == code).values(**values).returning(client_applications))
@@ -120,5 +131,6 @@ async def update_client_application(
     if row is None:
         await db.rollback()
         raise HTTPException(status_code=404, detail="Application cliente introuvable")
+    db.add(models.AuditLog(actor_user_pk=admin.user_pk, action="client_application_updated", entity_type="client_application", entity_id=row["client_application_pk"], details=json.dumps({"code": code, "changed_fields": sorted(payload.model_dump(exclude_unset=True).keys())})))
     await db.commit()
     return _serialize(row)
