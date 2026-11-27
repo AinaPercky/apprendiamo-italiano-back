@@ -12,28 +12,27 @@ from sqlalchemy import select
 from .database import get_db
 from . import models
 
-# ============================================================================
-# CONFIGURATION DE SÉCURITÉ
-# ============================================================================
-
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Clé secrète – EN PROD, TOUJOURS via .env ! Le fallback est là uniquement pour dev local
-SECRET_KEY = os.getenv(
-    "SECRET_KEY",
-    "dev-only-fallback-change-me-in-production-12345678901234567890"
-)
+
+def _load_secret_key() -> str:
+    """Charge la clé JWT obligatoire depuis l'environnement."""
+    secret_key = os.getenv("SECRET_KEY")
+    if not secret_key or not secret_key.strip():
+        raise RuntimeError(
+            "SECRET_KEY est obligatoire. Configurez un secret aléatoire "
+            "dans l'environnement avant de démarrer le backend."
+        )
+    return secret_key
+
+
+SECRET_KEY = _load_secret_key()
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30  # 30 minutes (ajustable)
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
-# Schéma Bearer Token
 security = HTTPBearer()
 
-
-# ============================================================================
-# GESTION DES MOTS DE PASSE
-# ============================================================================
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -43,29 +42,19 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-# ============================================================================
-# GESTION DES TOKENS JWT
-# ============================================================================
-
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """
-    Crée un token JWT d'accès.
-    Force toujours le champ 'sub' en string → conforme aux specs JWT et évite les 401.
-    """
+    """Crée un token JWT d'accès avec un type explicite."""
     to_encode = data.copy()
-
     expire = datetime.utcnow() + (
         expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
 
-    # On s'assure que 'sub' existe et est une string
     sub = to_encode.get("sub")
-    if sub is not None:
-        to_encode["sub"] = str(sub)  # ← LA LIGNE QUI RÉSOUT TON PROBLÈME À 100%
-    else:
+    if sub is None:
         raise ValueError("Le champ 'sub' est obligatoire pour créer un token")
 
-    to_encode.update({"exp": expire})
+    to_encode["sub"] = str(sub)
+    to_encode.update({"exp": expire, "type": "access"})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -73,43 +62,49 @@ def create_refresh_token(data: dict) -> str:
     """Crée un token de rafraîchissement (7 jours par défaut)."""
     to_encode = data.copy()
     sub = to_encode.get("sub")
-    if sub is not None:
-        to_encode["sub"] = str(sub)
+    if sub is None:
+        raise ValueError("Le champ 'sub' est obligatoire pour créer un token")
 
+    to_encode["sub"] = str(sub)
     expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire, "type": "refresh"})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def verify_token(token: str) -> dict:
-    """Vérifie et décode un token JWT."""
+    """Vérifie un JWT et refuse les tokens qui ne sont pas des tokens d'accès.
+
+    Les anciens access tokens sans claim type restent acceptés pendant leur
+    durée de vie résiduelle pour éviter une déconnexion immédiate au déploiement.
+    """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except JWTError as e:
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Token invalide ou expiré: {str(e)}",
+            detail="Token invalide ou expiré",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    token_type = payload.get("type")
+    if token_type not in (None, "access"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Type de token non autorisé",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-# ============================================================================
-# DÉPENDANCES D'AUTHENTIFICATION
-# ============================================================================
+    return payload
+
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> models.User:
-    """
-    Dépendance FastAPI : récupère l'utilisateur à partir du token Bearer.
-    Robuste même si 'sub' était un int dans un ancien token.
-    """
-    token = credentials.credentials
-    payload = verify_token(token)
-
+    """Récupère l'utilisateur à partir du token Bearer."""
+    payload = verify_token(credentials.credentials)
     sub = payload.get("sub")
+
     if not sub:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -118,7 +113,7 @@ async def get_current_user(
         )
 
     try:
-        user_pk = int(sub)  # Conversion sécurisée (accepte string ou int)
+        user_pk = int(sub)
     except (ValueError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -153,7 +148,7 @@ ROLE_ETUDIANT = "etudiant"
 async def get_current_active_user(
     current_user: models.User = Depends(get_current_user),
 ) -> models.User:
-    """Wrapper simple pour vérifier que l'utilisateur est actif."""
+    """Vérifie que l'utilisateur est actif."""
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Utilisateur inactif")
     return current_user
