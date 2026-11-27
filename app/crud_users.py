@@ -240,6 +240,16 @@ async def create_score(
                     db.add(performance)
                     await db.flush()
 
+                performance.total_attempts += 1
+                if score_data.is_correct:
+                    performance.correct_count += 1
+                else:
+                    performance.incorrect_count += 1
+                performance.priority_score = (
+                    performance.incorrect_count * 2
+                ) - performance.correct_count
+                performance.last_reviewed_at = datetime.utcnow()
+
                 anki_stats = anki_review(
                     easiness=performance.easiness,
                     interval=performance.interval,
