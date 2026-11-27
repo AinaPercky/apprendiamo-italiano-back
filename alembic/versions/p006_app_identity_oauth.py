@@ -42,7 +42,20 @@ def upgrade() -> None:
              '["https://bella-design-lab.vercel.app","http://localhost:8081","http://127.0.0.1:8081","http://localhost:5173","http://127.0.0.1:5173"]',
              '["https://bella-design-lab.vercel.app/oauth/callback","http://localhost:8081/oauth/callback","http://127.0.0.1:8081/oauth/callback","http://localhost:5173/oauth/callback","http://127.0.0.1:5173/oauth/callback"]',
              TRUE)
-        ON CONFLICT (code) DO NOTHING
+        ON CONFLICT (code) DO UPDATE
+        SET
+            allowed_origins = CASE
+                WHEN client_applications.allowed_origins IS NULL
+                     OR client_applications.allowed_origins = '[]'
+                THEN EXCLUDED.allowed_origins
+                ELSE client_applications.allowed_origins
+            END,
+            allowed_redirect_uris = CASE
+                WHEN client_applications.allowed_redirect_uris IS NULL
+                     OR client_applications.allowed_redirect_uris = '[]'
+                THEN EXCLUDED.allowed_redirect_uris
+                ELSE client_applications.allowed_redirect_uris
+            END
     """)
 
 
