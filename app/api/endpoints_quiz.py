@@ -15,7 +15,7 @@ from datetime import datetime
 
 from ..database import get_db
 from .. import crud_access, schemas, crud_quiz
-from ..security import get_current_active_user
+from ..security import get_current_studio_user
 
 
 router = APIRouter(prefix="/api/quiz", tags=["quiz"])
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/quiz", tags=["quiz"])
 @router.post("/start", response_model=schemas.QuizCardSelection, status_code=status.HTTP_201_CREATED)
 async def start_quiz(
     config: schemas.QuizConfigRequest,
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(get_current_studio_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
