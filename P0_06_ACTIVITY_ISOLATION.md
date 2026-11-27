@@ -18,6 +18,14 @@ Les opérations de quiz et de score mettent à jour cet état individuel. La sé
 
 Les anciennes colonnes Anki de `cards` sont conservées pour compatibilité avec les anciens contrats et outils Studio, mais le flux de quiz ne doit plus les modifier ni les utiliser pour la progression d'un apprenant.
 
+## Limite de sécurité applicative à traiter
+
+Cette PR corrige l'état Anki partagé et fixe la frontière de stockage visée, mais elle ne met pas encore en place une authentification applicative forte pour les routes d'activité existantes.
+
+Aujourd'hui, ces routes reposent sur le JWT utilisateur. `X-Client-App` est optionnel et public ; il ne prouve pas l'identité d'un serveur ou d'une application. Il ne faut donc pas le considérer comme une barrière empêchant à lui seul une autre application d'appeler les routes d'activité du Studio.
+
+Règle opérationnelle jusqu'au chantier complémentaire : seul le Studio doit appeler les routes d'activité de ce backend ; les autres applications doivent écrire dans leurs propres bases via leurs propres backends. Avant d'autoriser des clients externes à appeler les routes d'activité centrales, il faudra ajouter une authentification applicative vérifiable côté serveur (par exemple un BFF ou des jetons à audience/app scope), puis couvrir cette règle par des tests d'accès inter-applications.
+
 ## Migration
 
 Révision Alembic : `p006_user_card_progress`
