@@ -122,6 +122,24 @@ async def get_current_user(
     return user
 
 
+async def get_current_studio_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user: models.User = Depends(get_current_user),
+) -> models.User:
+    """Require a signed access token explicitly issued for the central Studio."""
+    payload = verify_token(credentials.credentials)
+    if (
+        payload.get("token_use") != "app_access"
+        or payload.get("aud") != "studio"
+        or payload.get("client_app") != "studio"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Un jeton d'accès destiné au Studio est requis",
+        )
+    return current_user
+
+
 async def get_optional_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
     db: AsyncSession = Depends(get_db),
