@@ -27,6 +27,7 @@ router = APIRouter(prefix="/api/oauth", tags=["application identity"])
 PKCE_CHALLENGE_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 STATE_RE = re.compile(r"^[A-Za-z0-9._~-]{16,256}$")
 PKCE_VERIFIER_RE = re.compile(r"^[A-Za-z0-9._~-]{43,128}$")
+AUTH_CODE_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 CODE_TTL_SECONDS = 90
 
 
@@ -120,7 +121,7 @@ async def exchange_authorization_code(
     code_verifier: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
-    if grant_type != "authorization_code" or not PKCE_VERIFIER_RE.fullmatch(code_verifier):
+    if grant_type != "authorization_code" or not AUTH_CODE_RE.fullmatch(code) or not PKCE_VERIFIER_RE.fullmatch(code_verifier):
         raise HTTPException(status_code=400, detail="Échange OAuth invalide")
     try:
         client_id = validate_app_code(client_id)
