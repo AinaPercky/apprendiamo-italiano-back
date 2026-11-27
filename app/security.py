@@ -129,7 +129,8 @@ async def get_current_studio_user(
     """Require a signed access token explicitly issued for the central Studio."""
     payload = verify_token(credentials.credentials)
     if (
-        payload.get("token_use") != "app_access"
+        payload.get("type") != "access"
+        or payload.get("token_use") != "app_access"
         or payload.get("aud") != "studio"
         or payload.get("client_app") != "studio"
     ):
