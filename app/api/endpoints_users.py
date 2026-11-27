@@ -410,15 +410,22 @@ async def get_google_oauth_config_endpoint():
 @router.get("/{user_pk}", response_model=schemas.UserResponse)
 async def get_user(
     user_pk: int,
-    db: AsyncSession = Depends(get_db)
+    current_user = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Récupère les informations publiques d'un utilisateur."""
-    user = await crud_users.get_user_by_id(db, user_pk)
+    """Récupère son propre profil ; seul un administrateur peut consulter autrui."""
+    if current_user.user_pk != user_pk and current_user.role != "admin":
+        # Même réponse qu'un identifiant inexistant pour éviter l'énumération.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
 
+    user = await crud_users.get_user_by_id(db, user_pk)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            detail="User not found",
         )
 
     return schemas.UserResponse.model_validate(user)

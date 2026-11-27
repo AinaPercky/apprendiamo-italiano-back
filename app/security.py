@@ -32,6 +32,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
@@ -138,6 +139,16 @@ async def get_current_user(
         )
 
     return user
+
+
+async def get_optional_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
+    db: AsyncSession = Depends(get_db),
+) -> Optional[models.User]:
+    """Retourne l'utilisateur authentifié, ou None pour un accès public anonyme."""
+    if credentials is None:
+        return None
+    return await get_current_user(credentials=credentials, db=db)
 
 
 ROLE_ADMIN = "admin"
