@@ -6,7 +6,7 @@ never receives human-user permissions and cannot elevate the authenticated user.
 from fastapi import Depends, HTTPException, status
 
 from . import models
-from .security import get_current_active_user
+from .security import get_current_studio_user
 
 ROLE_ADMIN = "admin"
 ROLE_TEACHER = "professeur"
@@ -36,7 +36,7 @@ def has_permission(user: models.User, permission: str) -> bool:
 
 def require_permission(permission: str):
     """FastAPI dependency for a centralized role-level permission check."""
-    async def dependency(current_user: models.User = Depends(get_current_active_user)) -> models.User:
+    async def dependency(current_user: models.User = Depends(get_current_studio_user)) -> models.User:
         if not has_permission(current_user, permission):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission insuffisante")
         return current_user
