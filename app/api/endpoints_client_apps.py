@@ -4,10 +4,11 @@ from datetime import datetime
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import select, insert, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from urllib.parse import urlsplit
 
 from ..client_applications import client_applications, validate_app_code
 from ..database import get_db
@@ -34,14 +35,21 @@ class ClientApplicationCreate(BaseModel):
         normalized = []
         for value in values:
             origin = value.strip().rstrip("/")
-            host = origin.split("://", 1)[-1]
-            if not (origin.startswith("https://") or origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1")):
+            parsed = urlsplit(origin)
+            local_http = parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
+            if parsed.scheme != "https" and not local_http:
                 raise ValueError("Chaque origine doit être HTTPS ou localhost.")
-            if "/" in host or "?" in host or "#" in host:
-                raise ValueError("Une origine ne doit contenir ni chemin ni query string.")
+            if not parsed.hostname or parsed.path or parsed.query or parsed.fragment or parsed.username or parsed.password:
+                raise ValueError("Une origine doit contenir uniquement un schéma et un hôte.")
             if origin not in normalized:
                 normalized.append(origin)
         return normalized
+
+    @model_validator(mode="after")
+    def require_public_web_origins(self):
+        if self.client_type == "public_web" and not self.allowed_origins:
+            raise ValueError("Une application web publique doit déclarer au moins une origine autorisée.")
+        return self
 
 
 class ClientApplicationUpdate(BaseModel):
