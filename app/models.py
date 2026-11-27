@@ -505,3 +505,18 @@ class ItalianConjugationForm(Base):
     raw_line = Column(Text, nullable=True)
 
     conjugation = relationship("ItalianConjugation", back_populates="forms")
+
+
+class OAuthAuthorizationCode(Base):
+    """Short-lived, one-time PKCE code; only its SHA-256 hash is persisted."""
+    __tablename__ = "oauth_authorization_codes"
+
+    code_pk = Column(Integer, primary_key=True, autoincrement=True)
+    code_hash = Column(String(64), nullable=False, unique=True, index=True)
+    user_pk = Column(Integer, ForeignKey("users.user_pk", ondelete="CASCADE"), nullable=False, index=True)
+    client_code = Column(String(64), nullable=False, index=True)
+    redirect_uri = Column(Text, nullable=False)
+    code_challenge = Column(String(128), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    consumed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
