@@ -512,7 +512,7 @@ class OAuthAuthorizationCode(Base):
     __tablename__ = "oauth_authorization_codes"
 
     code_pk = Column(Integer, primary_key=True, autoincrement=True)
-    code_hash = Column(String(64), nullable=False, unique=True, index=True)
+    code_hash = Column(String(64), nullable=False, unique=True)
     user_pk = Column(Integer, ForeignKey("users.user_pk", ondelete="CASCADE"), nullable=False, index=True)
     client_code = Column(String(64), nullable=False, index=True)
     redirect_uri = Column(Text, nullable=False)
