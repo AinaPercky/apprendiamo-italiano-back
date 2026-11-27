@@ -19,9 +19,8 @@ Tous les endpoints sécurisés utilisent des tokens JWT (JSON Web Tokens) pour l
 # Clé secrète pour signer les tokens JWT
 SECRET_KEY=your-secret-key-change-in-production
 
-# Configuration Google OAuth
+# Google Identity Services : Client ID public de l'application Web
 GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=your-google-client-secret
 
 # Durée de vie des tokens
 ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -37,7 +36,7 @@ REFRESH_TOKEN_EXPIRE_DAYS=7
 5. Ajouter les URI autorisés :
    - `http://localhost:8000` (développement)
    - `https://yourdomain.com` (production)
-6. Copier le Client ID et Client Secret dans le fichier `.env`
+6. Copier le Client ID dans la variable serveur `GOOGLE_CLIENT_ID` ; aucun Client Secret n'est utilisé pour la vérification des ID tokens.
 
 ---
 
