@@ -31,9 +31,9 @@ REFRESH_TOKEN_EXPIRE_DAYS=7
 
 1. Aller sur [Google Cloud Console](https://console.cloud.google.com)
 2. Créer un nouveau projet
-3. Activer l'API Google+ 
+3. Configurer l'écran de consentement OAuth 
 4. Créer des identifiants OAuth 2.0 (Type: Application Web)
-5. Ajouter les URI autorisés :
+5. Ajouter les origines JavaScript autorisées :
    - `http://localhost:8000` (développement)
    - `https://yourdomain.com` (production)
 6. Copier le Client ID dans la variable serveur `GOOGLE_CLIENT_ID` ; aucun Client Secret n'est utilisé pour la vérification des ID tokens.
@@ -147,9 +147,7 @@ Récupère la configuration Google OAuth pour le frontend.
 **Response (200):**
 ```json
 {
-  "client_id": "your-google-client-id.apps.googleusercontent.com",
-  "scope": "profile email",
-  "discovery_docs": [...]
+  "client_id": "your-google-client-id.apps.googleusercontent.com"
 }
 ```
 
