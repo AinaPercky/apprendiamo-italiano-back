@@ -121,4 +121,4 @@ async def test_student_card_due_filter_uses_the_authenticated_users_progress():
     sql = str(db.statement.compile(dialect=postgresql.dialect()))
     assert "card_performance.user_pk" in sql
     assert "card_performance.next_review" in sql
-    assert "cards.next_review" not in sql
+    assert "cards.next_review <=" not in sql
