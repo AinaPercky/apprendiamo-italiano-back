@@ -28,5 +28,11 @@ Cette migration dépend de `p006_user_card_progress`, lui-même dépendant de `a
 - Les URL Vercel Preview non listées ne sont pas autorisées. Utiliser le domaine de production stable ou ajouter explicitement un callback validé via le registre.
 - Les jetons génériques existants peuvent toujours consulter les routes de profil, mais ne peuvent plus enregistrer ou lire les activités réservées au Studio.
 
-## Déploiement
-Ne pas appliquer la migration avant que la PR backend et la PR Studio soient intégrées et que les callbacks/origines de production aient été confirmés. Prévoir un backup Neon. Aucun changement Neon/Supabase ni déploiement n'est réalisé par cette PR.
+## Déploiement progressif sans interruption
+1. Fusionner les PR backend et Studio après revue.
+2. Sauvegarder Neon puis appliquer les migrations dans l'ordre : `add_client_applications_registry`, `p006_user_card_progress`, `p006_app_identity_oauth`.
+3. Déployer le backend avec `REQUIRE_STUDIO_APP_TOKEN=false` (ou absent) : les nouveaux endpoints OAuth sont disponibles et les anciens jetons restent temporairement acceptés.
+4. Déployer le Studio PKCE et vérifier les connexions email, Google, les anciens jetons, les quiz et les progressions.
+5. Activer `REQUIRE_STUDIO_APP_TOKEN=true` dans l'environnement backend puis redéployer. À partir de là, les routes d'activité refusent les jetons génériques.
+
+Ne pas activer l'étape 5 avant validation du Studio en production. Prévoir un backup Neon et une procédure de retour arrière. Aucun changement Neon/Supabase, variable d'environnement ni déploiement n'est réalisé par cette PR.
