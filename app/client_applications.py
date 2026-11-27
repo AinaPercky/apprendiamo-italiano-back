@@ -57,7 +57,9 @@ async def get_client_application(
         allowed_origins = json.loads(row["allowed_origins"] or "[]")
     except (TypeError, json.JSONDecodeError):
         raise HTTPException(status_code=503, detail="Configuration d'application invalide")
-    if origin and allowed_origins and origin.rstrip("/") not in {item.rstrip("/") for item in allowed_origins}:
+    if row["client_type"] == "public_web" and not origin:
+        raise HTTPException(status_code=403, detail="Origine requise pour cette application web")
+    if origin and (row["client_type"] == "public_web" or allowed_origins) and origin.rstrip("/") not in {item.rstrip("/") for item in allowed_origins}:
         raise HTTPException(status_code=403, detail="Origine non autorisée pour cette application")
     return dict(row)
 
