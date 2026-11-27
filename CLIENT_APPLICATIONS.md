@@ -5,7 +5,7 @@ Le registre permet au backend d'identifier explicitement les applications qui co
 ## Principes de sécurité
 
 - `X-Client-App` contient un code public et stable, jamais une clé secrète.
-- L'identifiant ne prouve pas l'authenticité du client et ne confère aucun droit.
+- L'identifiant ne prouve pas l'authenticité du client et ne confère aucun droit. Il sert uniquement à identifier le client déclaré et à contrôler son origine.
 - Les permissions restent celles de l'utilisateur authentifié et des règles de ressource/abonnement.
 - Une application web enregistrée doit présenter une origine autorisée.
 - L'absence de `X-Client-App` reste acceptée pendant la transition afin de préserver les anciens frontends.
