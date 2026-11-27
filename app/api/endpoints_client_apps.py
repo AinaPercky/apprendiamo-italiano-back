@@ -24,6 +24,7 @@ class ClientApplicationCreate(BaseModel):
     client_type: Literal["public_web", "mobile", "server"]
     description: Optional[str] = Field(default=None, max_length=2000)
     allowed_origins: list[str] = Field(default_factory=list, max_length=30)
+    allowed_redirect_uris: list[str] = Field(default_factory=list, max_length=30)
 
     @field_validator("code")
     @classmethod
@@ -46,16 +47,41 @@ class ClientApplicationCreate(BaseModel):
                 normalized.append(origin)
         return normalized
 
+    @field_validator("allowed_redirect_uris")
+    @classmethod
+    def validate_redirect_uris(cls, values: list[str]) -> list[str]:
+        normalized = []
+        for value in values:
+            uri = value.strip()
+            parsed = urlsplit(uri)
+            local_http = parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
+            if (parsed.scheme != "https" and not local_http) or not parsed.hostname or not parsed.path.startswith("/") or parsed.query or parsed.fragment or parsed.username or parsed.password:
+                raise ValueError("Chaque URI de redirection doit être HTTPS (ou localhost) et ne contenir ni query ni fragment.")
+            if uri not in normalized:
+                normalized.append(uri)
+        return normalized
+
     @model_validator(mode="after")
     def require_public_web_origins(self):
         if self.client_type == "public_web" and not self.allowed_origins:
             raise ValueError("Une application web publique doit déclarer au moins une origine autorisée.")
+        origin_set = set(self.allowed_origins)
+        if any(f"{urlsplit(uri).scheme}://{urlsplit(uri).netloc}" not in origin_set for uri in self.allowed_redirect_uris):
+            raise ValueError("Chaque URI de redirection doit appartenir à une origine autorisée.")
         return self
 
 
 class ClientApplicationUpdate(BaseModel):
     is_active: Optional[bool] = None
     allowed_origins: Optional[list[str]] = Field(default=None, max_length=30)
+    allowed_redirect_uris: Optional[list[str]] = Field(default=None, max_length=30)
+
+    @field_validator("allowed_redirect_uris")
+    @classmethod
+    def validate_redirect_uris(cls, values):
+        if values is None:
+            return values
+        return ClientApplicationCreate.validate_redirect_uris(values)
 
     @field_validator("allowed_origins")
     @classmethod
@@ -68,6 +94,7 @@ class ClientApplicationUpdate(BaseModel):
 def _serialize(row):
     item = dict(row)
     item["allowed_origins"] = json.loads(item.get("allowed_origins") or "[]")
+    item["allowed_redirect_uris"] = json.loads(item.get("allowed_redirect_uris") or "[]")
     return item
 
 
@@ -88,6 +115,7 @@ async def create_client_application(
 ):
     values = payload.model_dump()
     values["allowed_origins"] = json.dumps(values["allowed_origins"])
+    values["allowed_redirect_uris"] = json.dumps(values["allowed_redirect_uris"])
     now = datetime.utcnow()
     values.update({"created_at": now, "updated_at": now})
     try:
@@ -117,6 +145,8 @@ async def update_client_application(
         raise HTTPException(status_code=400, detail="Aucune modification fournie")
     if any(value is None for value in values.values()):
         raise HTTPException(status_code=400, detail="Les champs de mise à jour ne peuvent pas être null")
+    if values.get("allowed_redirect_uris") is not None:
+        values["allowed_redirect_uris"] = json.dumps(values["allowed_redirect_uris"])
     if values.get("allowed_origins") is not None:
         current = await db.execute(select(client_applications).where(client_applications.c.code == code))
         existing = current.mappings().first()
