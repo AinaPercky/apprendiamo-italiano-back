@@ -22,7 +22,8 @@ def test_redirect_uri_origin_is_exact_and_safe():
 
 
 @pytest.mark.asyncio
-async def test_studio_dependency_accepts_only_studio_scoped_access_token():
+async def test_studio_dependency_accepts_only_studio_scoped_access_token(monkeypatch):
+    monkeypatch.setenv("REQUIRE_STUDIO_APP_TOKEN", "true")
     user = SimpleNamespace(user_pk=12)
     token = create_access_token({
         "sub": 12, "aud": "studio", "client_app": "studio", "token_use": "app_access"
@@ -37,10 +38,20 @@ async def test_studio_dependency_accepts_only_studio_scoped_access_token():
     {"sub": 12, "aud": "perckyl-ingua", "client_app": "perckyl-ingua", "token_use": "app_access"},
     {"sub": 12, "aud": "studio", "client_app": "studio", "token_use": "access"},
 ])
-async def test_studio_dependency_rejects_generic_or_other_app_tokens(claims):
+async def test_studio_dependency_rejects_generic_or_other_app_tokens(claims, monkeypatch):
+    monkeypatch.setenv("REQUIRE_STUDIO_APP_TOKEN", "true")
     user = SimpleNamespace(user_pk=12)
     token = create_access_token(claims)
     credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
     with pytest.raises(HTTPException) as exc:
         await get_current_studio_user(credentials=credentials, current_user=user)
     assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_legacy_token_is_accepted_during_compatibility_rollout(monkeypatch):
+    monkeypatch.setenv("REQUIRE_STUDIO_APP_TOKEN", "false")
+    user = SimpleNamespace(user_pk=12)
+    token = create_access_token({"sub": 12})
+    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+    assert await get_current_studio_user(credentials=credentials, current_user=user) is user
