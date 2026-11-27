@@ -43,6 +43,6 @@ Le Studio utilise désormais un flux Authorization Code avec PKCE S256 :
 - URI de callback exacte enregistrée dans `allowed_redirect_uris` ;
 - codes aléatoires à usage unique, expirant après 90 secondes, dont seul le hash est stocké ;
 - jetons d'accès signés avec `aud=studio`, `client_app=studio` et `token_use=app_access` ;
-- les routes de quiz, de progression et les opérations réservées au Studio exigent ce jeton applicatif.
+- les routes de quiz, de progression et les opérations réservées au Studio exigent ce jeton applicatif lorsque `REQUIRE_STUDIO_APP_TOKEN=true`. Ce drapeau est désactivé par défaut pour permettre le déploiement coordonné sans interruption.
 
 Le flux PKCE ne vaut que pour le client web Studio enregistré. Il ne fournit pas encore de mécanisme d'authentification serveur-à-serveur ni d'identité native mobile. Les autres applications ne doivent pas réutiliser l'identité Studio : chacune devra avoir son propre flux et ses propres règles de stockage d'activités.
