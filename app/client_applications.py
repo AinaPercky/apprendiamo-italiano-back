@@ -1,7 +1,7 @@
 """Registry and optional identity resolver for consuming applications.
 
-X-Client-App is an identifier, not a credential. It is suitable for routing,
-origin checks and audit attribution only; it must never grant authorization.
+X-Client-App is an identifier, not a credential. It is used only for client
+identification and origin checks; it must never grant authorization.
 """
 import json
 import re
