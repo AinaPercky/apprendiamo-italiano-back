@@ -146,7 +146,7 @@ async def test_complete_quiz_workflow():
             # 6. Finaliser la session
             print("\n✅ 6. Finalisation de la session...")
             completed = await crud_quiz.complete_quiz_session(
-                db, session.session_pk, 3, 5
+                db, session.session_pk, 3, 5, user_pk=user.user_pk
             )
             print(f"   Session terminée: 3/5 correctes")
 
@@ -167,7 +167,7 @@ async def test_complete_quiz_workflow():
                 db, user.user_pk, deck.deck_pk, 10, "classique",
                 [c.card_pk for c in selected_cards2], cycle2
             )
-            await crud_quiz.complete_quiz_session(db, session2.session_pk, 8, 10)
+            await crud_quiz.complete_quiz_session(db, session2.session_pk, 8, 10, user_pk=user.user_pk)
 
             # 8. Nouveau quiz - devrait démarrer le cycle 2 avec priorisation
             print("\n🎯 8. Démarrage du cycle 2 (priorisation intelligente)...")
