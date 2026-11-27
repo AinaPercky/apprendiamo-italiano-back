@@ -1,3 +1,4 @@
+# Security gate includes PKCE endpoint-level tests for the Studio authorization-code flow.
 name: Backend security tests
 
 on:
