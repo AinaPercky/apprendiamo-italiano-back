@@ -9,7 +9,7 @@ Fonctionnalités:
 - Historique des sessions
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 
@@ -181,8 +181,8 @@ async def record_answer(
 @router.post("/complete/{session_pk}", response_model=schemas.QuizSessionResponse)
 async def complete_quiz(
     session_pk: int,
-    correct_count: int,
-    total_questions: int,
+    correct_count: int = Query(..., ge=0),
+    total_questions: int = Query(..., ge=0),
     current_user = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -194,12 +194,30 @@ async def complete_quiz(
     - **correct_count**: Nombre de réponses correctes
     - **total_questions**: Nombre total de questions posées
     """
-    session = await crud_quiz.complete_quiz_session(
-        db,
-        session_pk,
-        correct_count,
-        total_questions
-    )
+    if correct_count > total_questions:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Le nombre de réponses correctes ne peut pas dépasser le nombre total de questions"
+        )
+
+    try:
+        session = await crud_quiz.complete_quiz_session(
+            db,
+            session_pk,
+            correct_count,
+            total_questions,
+            user_pk=current_user.user_pk
+        )
+    except crud_quiz.QuizSessionAlreadyCompletedError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cette session de quiz est déjà terminée"
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc)
+        )
     
     if not session:
         raise HTTPException(

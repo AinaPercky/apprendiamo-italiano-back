@@ -358,60 +358,89 @@ async def create_quiz_session(
     return session
 
 
+class QuizSessionAlreadyCompletedError(Exception):
+    """Levée lorsqu'une session déjà finalisée est soumise une seconde fois."""
+
+
 async def complete_quiz_session(
     db: AsyncSession,
     session_pk: int,
     correct_count: int,
-    total_questions: int
+    total_questions: int,
+    user_pk: int
 ) -> Optional[models.QuizSession]:
-    """Marque une session de quiz comme terminée ET met à jour le UserDeck"""
-    stmt = select(models.QuizSession).where(models.QuizSession.session_pk == session_pk)
+    """Finalise uniquement une session appartenant à l'utilisateur authentifié.
+
+    Le verrou de ligne garantit qu'une session ne peut créditer UserDeck qu'une
+    seule fois, même si deux requêtes de finalisation arrivent simultanément.
+    """
+    if correct_count < 0 or total_questions < 0:
+        raise ValueError("Les compteurs de réponses ne peuvent pas être négatifs")
+    if correct_count > total_questions:
+        raise ValueError(
+            "Le nombre de réponses correctes ne peut pas dépasser le nombre total de questions"
+        )
+
+    stmt = (
+        select(models.QuizSession)
+        .where(
+            and_(
+                models.QuizSession.session_pk == session_pk,
+                models.QuizSession.user_pk == user_pk,
+            )
+        )
+        .with_for_update()
+    )
     result = await db.execute(stmt)
     session = result.scalar_one_or_none()
-    
+
+    # Même réponse pour une session inexistante et une session appartenant
+    # à un autre utilisateur afin de ne pas révéler son existence.
     if not session:
         return None
-    
-    # Mettre à jour la session
+
+    if session.completed_at is not None:
+        raise QuizSessionAlreadyCompletedError(
+            "Cette session de quiz est déjà terminée"
+        )
+
     session.correct_count = correct_count
     session.total_questions = total_questions
     session.completed_at = datetime.utcnow()
-    
-    # ⭐ IMPORTANT : Mettre à jour le UserDeck pour le dashboard
-    # Récupérer ou créer le UserDeck
+
     stmt_user_deck = select(models.UserDeck).where(
-        models.UserDeck.user_pk == session.user_pk,
-        models.UserDeck.deck_pk == session.deck_pk
+        and_(
+            models.UserDeck.user_pk == session.user_pk,
+            models.UserDeck.deck_pk == session.deck_pk
+        )
     )
     result_user_deck = await db.execute(stmt_user_deck)
     user_deck = result_user_deck.scalar_one_or_none()
-    
+
     if not user_deck:
-        # Créer le UserDeck s'il n'existe pas
         user_deck = models.UserDeck(
             user_pk=session.user_pk,
             deck_pk=session.deck_pk,
             correct_count=0,
             attempt_count=0,
-            cards_mastered=0
+            cards_mastered=0,
+            total_attempts=0,
+            successful_attempts=0,
+            total_points=0
         )
         db.add(user_deck)
-    
-    # Mettre à jour les compteurs (doublons historiques maintenus pour compatibilité)
+
     user_deck.attempt_count += total_questions
     user_deck.correct_count += correct_count
-    
-    # Mettre à jour les champs utilisés par le frontend (UserDeckResponse)
     user_deck.total_attempts += total_questions
     user_deck.successful_attempts += correct_count
     user_deck.last_studied = datetime.utcnow()
-    
+
     await db.commit()
     await db.refresh(session)
     await db.refresh(user_deck)
-    
-    return session
 
+    return session
 
 async def get_user_quiz_sessions(
     db: AsyncSession,
