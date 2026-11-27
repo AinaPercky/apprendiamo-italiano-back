@@ -89,3 +89,31 @@ async def test_registered_client_origin_is_accepted():
     row = {"code": "studio", "is_active": True, "allowed_origins": json.dumps(["https://studio.example"])}
     result = await get_client_application(x_client_app="studio", origin="https://studio.example", db=FakeDb(row))
     assert result["code"] == "studio"
+
+from app.api.endpoints_client_apps import ClientApplicationCreate
+
+
+def test_public_web_application_requires_allowed_origins():
+    with pytest.raises(ValueError):
+        ClientApplicationCreate(code="studio", name="Studio", client_type="public_web")
+
+
+def test_server_application_can_have_no_browser_origins():
+    app = ClientApplicationCreate(code="server-api", name="Server API", client_type="server")
+    assert app.allowed_origins == []
+
+
+def test_public_web_application_accepts_https_origin():
+    app = ClientApplicationCreate(
+        code="studio", name="Studio", client_type="public_web",
+        allowed_origins=["https://studio.example"],
+    )
+    assert app.allowed_origins == ["https://studio.example"]
+
+
+def test_public_web_application_rejects_non_local_http_origin():
+    with pytest.raises(ValueError):
+        ClientApplicationCreate(
+            code="studio", name="Studio", client_type="public_web",
+            allowed_origins=["http://studio.example"],
+        )
