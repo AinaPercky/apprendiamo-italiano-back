@@ -21,6 +21,7 @@ from ..security import (
     create_refresh_token,
     get_current_user,
     get_current_active_user,
+    get_current_studio_user,
     require_teacher_or_admin,
     ACCESS_TOKEN_EXPIRE_MINUTES,
 )
