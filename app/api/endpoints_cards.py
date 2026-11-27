@@ -108,7 +108,9 @@ async def read_cards(
             raise HTTPException(status_code=402, detail="Un pass actif est requis pour accéder aux cartes")
     return await crud_cards.get_cards(
         db, skip=skip, limit=limit, deck_pk=deck_pk, search=search, 
-        min_box=min_box, due_only=due_only
+        min_box=min_box,
+        due_only=due_only,
+        user_pk=current_user.user_pk if current_user.role == "etudiant" else None,
     )
 
 @router.post("/cards/{card_pk}/audio", response_model=schemas.CardAudioPublic)

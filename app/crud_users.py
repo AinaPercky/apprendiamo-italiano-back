@@ -197,14 +197,12 @@ async def create_score(
         user.total_cards_reviewed += 1
         db.add(user)
         
-    # 3. Algorithme Anki & Mise à jour de la carte
+    # 3. Algorithme Anki : état de révision propre à l'utilisateur
     if score_data.card_pk:
-        # Récupérer la carte
         result = await db.execute(select(models.Card).where(models.Card.card_pk == score_data.card_pk))
         card = result.scalar_one_or_none()
-        
+
         if card:
-            # Calculer le grade Anki (0-3) basé sur le score (0-100)
             if score_data.score < 50:
                 grade = 0  # Again
             elif score_data.score < 75:
@@ -213,29 +211,61 @@ async def create_score(
                 grade = 2  # Good
             else:
                 grade = 3  # Easy
-            
-            # Appliquer l'algorithme
-            anki_stats = anki_review(
-                easiness=card.easiness,
-                interval=card.interval,
-                consecutive_correct=card.consecutive_correct,
-                grade=grade
-            )
-            
-            # Mettre à jour la carte
-            card.easiness = anki_stats["easiness"]
-            card.interval = anki_stats["interval"]
-            card.consecutive_correct = anki_stats["consecutive_correct"]
-            card.next_review = anki_stats["next_review"]
-            
-            # Mise à jour de la boîte (Leitner system simplifié)
-            if grade >= 2:
-                card.box += 1
-            elif grade == 0:
-                card.box = 0
-                
-            db.add(card)
-            
+
+            # CardPerformance est le stockage individuel. Une carte sans deck explicite
+            # ne peut pas être associée à une performance deck valide.
+            if score_data.deck_pk:
+                perf_result = await db.execute(
+                    select(models.CardPerformance).where(
+                        (models.CardPerformance.user_pk == user_pk) &
+                        (models.CardPerformance.card_pk == score_data.card_pk)
+                    )
+                )
+                performance = perf_result.scalar_one_or_none()
+                if performance is None:
+                    performance = models.CardPerformance(
+                        user_pk=user_pk,
+                        card_pk=score_data.card_pk,
+                        deck_pk=score_data.deck_pk,
+                        correct_count=0,
+                        incorrect_count=0,
+                        total_attempts=0,
+                        priority_score=0.0,
+                        easiness=2.5,
+                        interval=0,
+                        consecutive_correct=0,
+                        next_review=datetime.utcnow(),
+                        box=0,
+                    )
+                    db.add(performance)
+                    await db.flush()
+
+                performance.total_attempts += 1
+                if score_data.is_correct:
+                    performance.correct_count += 1
+                else:
+                    performance.incorrect_count += 1
+                performance.priority_score = (
+                    performance.incorrect_count * 2
+                ) - performance.correct_count
+                performance.last_reviewed_at = datetime.utcnow()
+
+                anki_stats = anki_review(
+                    easiness=performance.easiness,
+                    interval=performance.interval,
+                    consecutive_correct=performance.consecutive_correct,
+                    grade=grade
+                )
+                performance.easiness = anki_stats["easiness"]
+                performance.interval = anki_stats["interval"]
+                performance.consecutive_correct = anki_stats["consecutive_correct"]
+                performance.next_review = anki_stats["next_review"]
+                if grade >= 2:
+                    performance.box += 1
+                elif grade == 0:
+                    performance.box = 0
+                db.add(performance)
+
             # Mettre à jour les stats du UserDeck si possible
             if score_data.deck_pk:
                 ud_result = await db.execute(
@@ -477,39 +507,17 @@ async def update_user_deck_anki_stats(
             # Si on veut aligner TOTALEMENT, on devrait join Cards.
             pass
 
-    # RE-STRATÉGIE : Faire une requête aggrégée ou join
-    # On va join CardPerformance et Card pour avoir les données exactes
-    # Cependant, Card.consecutive_correct est GLOBAL. Si on l'utilise pour UserStats, on a le problème original.
-    # Pour l'instant, schemas.py utilise Card.consecutive_correct.
-    # SI Card.consecutive_correct est utilisé pour déterminer "Maîtrisée", alors on DOIT l'utiliser ici.
-    
-    stmt_join = select(models.CardPerformance, models.Card).join(
-        models.Card, models.CardPerformance.card_pk == models.Card.card_pk
-    ).where(
-        (models.CardPerformance.user_pk == user_deck.user_pk) &
-        (models.CardPerformance.deck_pk == user_deck.deck_pk)
-    )
-    result_join = await db.execute(stmt_join)
-    rows = result_join.all() # [(CardPerformance, Card), ...]
-    
+    # Les états de révision sont maintenant stockés dans CardPerformance,
+    # qui est propre à l'utilisateur. Ne jamais joindre les champs Anki globaux de Card.
     mastered_cards = 0
     review_cards = 0
-    
-    processed_card_pks = set()
-    
-    for perf, card in rows:
-        processed_card_pks.add(perf.card_pk)
-        
-        # Logique Label (schemas.py)
-        # En cours: attempts == 0 (exclus par la requête perf w/ attempts>0 si on filtre, mais ici on prend tout)
-        if perf.total_attempts == 0:
-            continue # Est "En cours"
-            
-        # Maîtrisée: consecutive_correct > 0
-        if card.consecutive_correct > 0:
+
+    for perf in performances:
+        if perf.total_attempts <= 0:
+            continue
+        if perf.consecutive_correct > 0:
             mastered_cards += 1
         else:
-            # Non maîtrisée (consecutive_correct == 0, attempts > 0) -> Review
             review_cards += 1
             
     # Learning (En cours) = Total - (Mastered + Review)

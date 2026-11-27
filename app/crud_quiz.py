@@ -48,7 +48,12 @@ async def get_or_create_card_performance(
             correct_count=0,
             incorrect_count=0,
             total_attempts=0,
-            priority_score=0.0
+            priority_score=0.0,
+            easiness=2.5,
+            interval=0,
+            consecutive_correct=0,
+            next_review=datetime.utcnow(),
+            box=0
         )
         db.add(performance)
         await db.commit()
@@ -80,35 +85,25 @@ async def update_card_performance(
     performance.priority_score = (performance.incorrect_count * 2) - performance.correct_count
     performance.last_reviewed_at = datetime.utcnow()
 
-    # === UPDATE ANKI STATS (Global Card) ===
-    # Permet de mettre à jour les compteurs (Mastered/Learning/Review) pour le dashboard
-    stmt_card = select(models.Card).where(models.Card.card_pk == card_pk)
-    result_card = await db.execute(stmt_card)
-    card = result_card.scalar_one_or_none()
+    # === ÉTAT ANKI INDIVIDUEL ===
+    # Les cartes sont des contenus partagés : leur état de révision ne doit
+    # jamais être modifié par les réponses d'un utilisateur.
+    grade = 3 if is_correct else 0
+    anki_stats = anki_review(
+        easiness=performance.easiness,
+        interval=performance.interval,
+        consecutive_correct=performance.consecutive_correct,
+        grade=grade
+    )
+    performance.easiness = anki_stats["easiness"]
+    performance.interval = anki_stats["interval"]
+    performance.consecutive_correct = anki_stats["consecutive_correct"]
+    performance.next_review = anki_stats["next_review"]
 
-    if card:
-        # Mapping simple: Correct -> Good (3), Incorrect -> Again (0)
-        grade = 3 if is_correct else 0
-        
-        anki_stats = anki_review(
-            easiness=card.easiness,
-            interval=card.interval,
-            consecutive_correct=card.consecutive_correct,
-            grade=grade
-        )
-        
-        card.easiness = anki_stats["easiness"]
-        card.interval = anki_stats["interval"]
-        card.consecutive_correct = anki_stats["consecutive_correct"]
-        card.next_review = anki_stats["next_review"]
-        
-        # Mise à jour de la boîte (Leitner system simplifié)
-        if grade >= 2:
-            card.box += 1
-        elif grade == 0:
-            card.box = 0
-            
-        db.add(card)
+    if grade >= 2:
+        performance.box += 1
+    elif grade == 0:
+        performance.box = 0
 
     # === UPDATE USER SCORE (POINTS) ===
     # Mise à jour des points dans UserDeck (10 points par bonne réponse)
@@ -258,7 +253,9 @@ async def select_cards_for_quiz(
     learning_new_cards = [] # Cartes en cours ou nouvelles (next_review > now)
     
     for card in all_cards:
-        if card.next_review <= now:
+        performance = perf_dict.get(card.card_pk)
+        # Une carte jamais travaillée est une nouvelle carte pour cet utilisateur.
+        if performance and performance.next_review <= now:
             review_cards.append(card)
         else:
             learning_new_cards.append(card)
