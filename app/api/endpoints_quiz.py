@@ -64,6 +64,10 @@ async def start_quiz(
         
         # Préparer les données des cartes AVANT commit pour éviter MissingGreenlet
         selected_card_pks = [card.card_pk for card in selected_cards]
+        selected_performances = await crud_quiz.get_deck_performances(
+            db, current_user.user_pk, config.deck_pk
+        )
+        performance_by_card = {item.card_pk: item for item in selected_performances}
         selected_cards_payload = [
             schemas.QuizCardPublic(
                 card_pk=card.card_pk,
@@ -71,7 +75,7 @@ async def start_quiz(
                 back=card.back,
                 pronunciation=getattr(card, "pronunciation", None),
                 image=getattr(card, "image", None),
-                box=card.box,
+                box=performance_by_card[card.card_pk].box if card.card_pk in performance_by_card else 0,
                 tags=getattr(card, "tags", [])
             )
             for card in selected_cards
@@ -154,18 +158,7 @@ async def record_answer(
             is_correct
         )
         
-        # Charger la carte pour avoir consecutive_correct
-        from sqlalchemy import select
-        from ..models import Card
-        stmt = select(Card).where(Card.card_pk == card_pk)
-        result = await db.execute(stmt)
-        card = result.scalar_one_or_none()
-        
-        # Injecter consecutive_correct manuellement
-        perf_dict = performance.__dict__.copy()
-        perf_dict['consecutive_correct'] = card.consecutive_correct if card else 0
-        
-        return schemas.CardPerformanceResponse(**perf_dict)
+        return schemas.CardPerformanceResponse.model_validate(performance)
         
     except Exception as e:
         raise HTTPException(
@@ -274,10 +267,7 @@ async def get_deck_performances(
     )
     
     return [
-        schemas.CardPerformanceResponse(
-            **p.__dict__,
-            consecutive_correct=p.card.consecutive_correct if p.card else 0
-        ) for p in performances
+        schemas.CardPerformanceResponse.model_validate(p) for p in performances
     ]
 
 
