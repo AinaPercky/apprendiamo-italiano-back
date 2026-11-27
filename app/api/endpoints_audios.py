@@ -6,7 +6,8 @@ from typing import List
 from .. import crud_audios, schemas
 from ..database import get_db
 from .. import models
-from ..security import require_teacher_or_admin
+from ..security import require_teacher_or_admin, get_optional_current_user
+from ..audio_access import can_read_audio_item
 
 router = APIRouter(
     prefix="/audios",
@@ -38,32 +39,49 @@ async def create_audio(
 
 @router.get("/", response_model=List[schemas.AudioItem])
 async def list_audios(
-    # skip: int = 0, 
-    # limit: int = 10, 
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User | None = Depends(get_optional_current_user),
 ):
-    return await crud_audios.list_audio_items(db)
+    items = await crud_audios.list_audio_item_records(db)
+    visible = []
+    for item in items:
+        if await can_read_audio_item(db, item, current_user):
+            visible.append(crud_audios._serialize_audio_item(item))
+    return visible
 
     # return await crud_audios.list_audio_items(db, skip, limit)
 
 @router.get("/{audio_id}/file", response_class=Response)
-async def stream_audio(audio_id: int, db: AsyncSession = Depends(get_db)):
+async def stream_audio(
+    audio_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User | None = Depends(get_optional_current_user),
+):
+    item = await crud_audios.get_audio_item_record(db, audio_id)
+    if item is None or not await can_read_audio_item(db, item, current_user):
+        raise HTTPException(status_code=404, detail="Fichier audio introuvable")
     audio = await crud_audios.get_audio_bytes(db, audio_id)
     if audio is None:
         raise HTTPException(status_code=404, detail="Fichier audio introuvable")
     payload, content_type = audio
+    is_public = item.visibility == "global" and item.published_at is not None
+    cache_control = "public, max-age=31536000, immutable" if is_public else "private, no-store"
     return Response(
         content=payload,
         media_type=content_type,
-        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        headers={"Cache-Control": cache_control},
     )
 
 @router.get("/{audio_id}", response_model=schemas.AudioItem)
-async def get_audio(audio_id: int, db: AsyncSession = Depends(get_db)):
-    audio_item = await crud_audios.get_audio_item(db, audio_id)
-    if not audio_item:
+async def get_audio(
+    audio_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User | None = Depends(get_optional_current_user),
+):
+    item = await crud_audios.get_audio_item_record(db, audio_id)
+    if item is None or not await can_read_audio_item(db, item, current_user):
         raise HTTPException(status_code=404, detail="Audio not found")
-    return audio_item
+    return crud_audios._serialize_audio_item(item)
 
 @router.delete("/{audio_id}")
 async def delete_audio(
