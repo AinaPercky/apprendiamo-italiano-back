@@ -37,6 +37,12 @@ Les origines sont des origines complètes sans chemin. Les applications web doiv
 
 Une application enregistrée peut envoyer `X-Client-App: perckyl-ingua` avec ses requêtes authentifiées. Le backend vérifie l'existence, l'activation et, pour les clients web, l'origine. Les anciennes applications peuvent continuer à ne pas envoyer cet en-tête.
 
-## Limites de cette première étape
+## Identité applicative du Studio
 
-Ce registre n'implémente pas encore OAuth 2.0 client credentials, les scopes applicatifs, ni l'isolation des activités par application. Il prépare une identité applicative vérifiable au niveau de la configuration sans transformer un identifiant public en secret. Ces mécanismes seront définis séparément avant d'accorder des droits serveur-à-serveur.
+Le Studio utilise désormais un flux Authorization Code avec PKCE S256 :
+- URI de callback exacte enregistrée dans `allowed_redirect_uris` ;
+- codes aléatoires à usage unique, expirant après 90 secondes, dont seul le hash est stocké ;
+- jetons d'accès signés avec `aud=studio`, `client_app=studio` et `token_use=app_access` ;
+- les routes de quiz, de progression et les opérations réservées au Studio exigent ce jeton applicatif lorsque `REQUIRE_STUDIO_APP_TOKEN=true`. Ce drapeau est désactivé par défaut pour permettre le déploiement coordonné sans interruption.
+
+Le flux PKCE ne vaut que pour le client web Studio enregistré. Il ne fournit pas encore de mécanisme d'authentification serveur-à-serveur ni d'identité native mobile. Les autres applications ne doivent pas réutiliser l'identité Studio : chacune devra avoir son propre flux et ses propres règles de stockage d'activités.

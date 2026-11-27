@@ -71,7 +71,7 @@ def create_refresh_token(data: dict) -> str:
 def verify_token(token: str) -> dict:
     """Vérifie un JWT et refuse les tokens qui ne sont pas des tokens d'accès."""
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_aud": False})
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -122,6 +122,31 @@ async def get_current_user(
     return user
 
 
+async def get_current_studio_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user: models.User = Depends(get_current_user),
+) -> models.User:
+    """Require a signed access token explicitly issued for the central Studio."""
+    # Roll out enforcement only after the Studio frontend has completed its PKCE migration.
+    # Set REQUIRE_STUDIO_APP_TOKEN=true to reject legacy generic user tokens on Studio activity routes.
+    enforcement = os.getenv("REQUIRE_STUDIO_APP_TOKEN", "false").strip().lower()
+    if enforcement not in {"1", "true", "yes", "on"}:
+        return current_user
+
+    payload = verify_token(credentials.credentials)
+    if (
+        payload.get("type") != "access"
+        or payload.get("token_use") != "app_access"
+        or payload.get("aud") != "studio"
+        or payload.get("client_app") != "studio"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Un jeton d'accès destiné au Studio est requis",
+        )
+    return current_user
+
+
 async def get_optional_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
     db: AsyncSession = Depends(get_db),
@@ -159,14 +184,14 @@ def require_roles(*allowed_roles: str):
     return dependency
 
 
-async def require_admin(current_user: models.User = Depends(get_current_active_user)) -> models.User:
+async def require_admin(current_user: models.User = Depends(get_current_studio_user)) -> models.User:
     from .permissions import has_permission
     if not has_permission(current_user, "client_apps:manage"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Droits administrateur requis")
     return current_user
 
 
-async def require_teacher_or_admin(current_user: models.User = Depends(get_current_active_user)) -> models.User:
+async def require_teacher_or_admin(current_user: models.User = Depends(get_current_studio_user)) -> models.User:
     from .permissions import has_permission
     if not has_permission(current_user, "content:create"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Droits professeur ou administrateur requis")

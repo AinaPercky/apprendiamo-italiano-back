@@ -22,6 +22,7 @@ client_applications = Table(
     Column("client_type", String(24), nullable=False),
     Column("description", Text, nullable=True),
     Column("allowed_origins", Text, nullable=False, default="[]", server_default="[]"),
+    Column("allowed_redirect_uris", Text, nullable=False, default="[]", server_default="[]"),
     Column("is_active", Boolean, nullable=False, default=True, server_default="true", index=True),
     Column("created_at", DateTime(timezone=True), nullable=False, default=datetime.utcnow),
     Column("updated_at", DateTime(timezone=True), nullable=False, default=datetime.utcnow),
