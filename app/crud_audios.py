@@ -215,21 +215,27 @@ async def create_audio_item(
     return _serialize_audio_item(audio_item)
 
 
-async def get_audio_item(db: AsyncSession, audio_id: int):
+async def get_audio_item_record(db: AsyncSession, audio_id: int) -> Optional[models.AudioItem]:
     result = await db.execute(
         select(models.AudioItem).where(models.AudioItem.id == audio_id)
     )
-    item = result.scalar_one_or_none()
+    return result.scalar_one_or_none()
 
-    if not item:
-        return None
 
-    return _serialize_audio_item(item)
+async def get_audio_item(db: AsyncSession, audio_id: int):
+    item = await get_audio_item_record(db, audio_id)
+    return _serialize_audio_item(item) if item else None
+
+
+async def list_audio_item_records(db: AsyncSession) -> list[models.AudioItem]:
+    result = await db.execute(
+        select(models.AudioItem).order_by(models.AudioItem.id.asc())
+    )
+    return list(result.scalars().all())
 
 
 async def list_audio_items(db: AsyncSession):
-    result = await db.execute(select(models.AudioItem))
-    items = result.scalars().all()
+    items = await list_audio_item_records(db)
     return [_serialize_audio_item(item) for item in items]
 
 
