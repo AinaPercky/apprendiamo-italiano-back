@@ -164,57 +164,6 @@ async def deactivate_user(
 
 
 # ============================================================================
-# OPÉRATIONS GOOGLE OAUTH
-# ============================================================================
-
-async def create_or_update_google_user(
-    db: AsyncSession,
-    user_data: schemas.UserGoogleLogin
-) -> models.User:
-    """Crée ou met à jour un utilisateur Google."""
-    # Vérifier si l'utilisateur existe déjà
-    user = await get_user_by_google_id(db, user_data.google_id)
-    
-    if user:
-        # Mettre à jour les informations
-        user.google_email = user_data.google_email
-        user.google_picture = user_data.google_picture
-        if user_data.first_name:
-            user.first_name = user_data.first_name
-        if user_data.last_name:
-            user.last_name = user_data.last_name
-        user.updated_at = datetime.utcnow()
-    else:
-        # Créer un nouvel utilisateur
-        # Générer un username unique à partir de l'email
-        base_username = user_data.google_email.split("@")[0]
-        username = base_username
-        counter = 1
-        
-        while await get_user_by_username(db, username):
-            username = f"{base_username}{counter}"
-            counter += 1
-        
-        user = models.User(
-            email=user_data.google_email,
-            username=username,
-            google_id=user_data.google_id,
-            google_email=user_data.google_email,
-            google_picture=user_data.google_picture,
-            first_name=user_data.first_name,
-            last_name=user_data.last_name,
-            is_active=True,
-            role="etudiant",
-            is_verified=True,  # Les utilisateurs Google sont automatiquement vérifiés
-        )
-    
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    return user
-
-
-# ============================================================================
 # OPÉRATIONS SCORES
 # ============================================================================
 
