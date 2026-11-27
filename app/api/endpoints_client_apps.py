@@ -145,8 +145,6 @@ async def update_client_application(
         raise HTTPException(status_code=400, detail="Aucune modification fournie")
     if any(value is None for value in values.values()):
         raise HTTPException(status_code=400, detail="Les champs de mise à jour ne peuvent pas être null")
-    if values.get("allowed_redirect_uris") is not None:
-        values["allowed_redirect_uris"] = json.dumps(values["allowed_redirect_uris"])
     if "allowed_origins" in values or "allowed_redirect_uris" in values:
         current = await db.execute(select(client_applications).where(client_applications.c.code == code))
         existing = current.mappings().first()
