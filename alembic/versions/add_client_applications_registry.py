@@ -26,11 +26,9 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint("code", name="uq_client_applications_code"),
     )
-    op.create_index("ix_client_applications_code", "client_applications", ["code"], unique=True)
     op.create_index("ix_client_applications_is_active", "client_applications", ["is_active"], unique=False)
 
 
 def downgrade() -> None:
     op.drop_index("ix_client_applications_is_active", table_name="client_applications")
-    op.drop_index("ix_client_applications_code", table_name="client_applications")
     op.drop_table("client_applications")
