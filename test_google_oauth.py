@@ -137,3 +137,55 @@ def test_google_config_requires_client_id(monkeypatch):
 
     with pytest.raises(google_oauth.GoogleOAuthConfigurationError):
         google_oauth.get_google_oauth_config()
+
+
+@pytest.mark.asyncio
+async def test_google_token_rejects_expired_claim(monkeypatch):
+    monkeypatch.setattr(google_oauth, "GOOGLE_CLIENT_ID", "studio-client-id")
+    monkeypatch.setattr(
+        google_oauth.id_token,
+        "verify_oauth2_token",
+        lambda *_args: {**VALID_CLAIMS, "exp": 1},
+    )
+
+    with pytest.raises(google_oauth.GoogleOAuthError, match="expired"):
+        await google_oauth.verify_google_token("signed-google-token")
+
+
+@pytest.mark.asyncio
+async def test_existing_local_account_is_not_linked_by_email():
+    from app.crud_google_users import (
+        GoogleAccountConflictError,
+        create_or_update_google_user,
+    )
+    from app.schemas_google_oauth import VerifiedGoogleIdentity
+
+    class FakeResult:
+        def __init__(self, value):
+            self.value = value
+
+        def scalar_one_or_none(self):
+            return self.value
+
+    class FakeDatabase:
+        def __init__(self, results):
+            self.results = iter(results)
+            self.committed = False
+
+        async def execute(self, _statement):
+            return next(self.results)
+
+        async def commit(self):
+            self.committed = True
+
+    existing_local_user = object()
+    db = FakeDatabase([FakeResult(None), FakeResult(existing_local_user)])
+    identity = VerifiedGoogleIdentity(
+        google_id="new-google-subject",
+        google_email="learner@example.com",
+    )
+
+    with pytest.raises(GoogleAccountConflictError):
+        await create_or_update_google_user(db, identity)
+
+    assert db.committed is False
