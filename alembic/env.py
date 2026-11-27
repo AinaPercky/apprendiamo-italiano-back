@@ -15,7 +15,8 @@ from alembic import context
 import os
 
 # Maintenant l'import marche
-from app.models import Base  # ← maintenant ça trouve 'app'\nfrom app.client_applications import client_applications  # register client app table in metadata
+from app.models import Base  # ← maintenant ça trouve 'app'
+from app.client_applications import client_applications  # register client app table in metadata
 
 # this is the Alembic Config object
 config = context.config
