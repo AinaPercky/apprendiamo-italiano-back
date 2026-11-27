@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, Text,Float, TIMESTAMP, String, inspect, Boolean, DateTime, Table, UniqueConstraint, Numeric
+from sqlalchemy import Column, ForeignKey, Integer, Text,Float, TIMESTAMP, String, inspect, Boolean, DateTime, Table, UniqueConstraint, Numeric, func
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -385,7 +385,7 @@ class CardPerformance(Base):
     easiness = Column(Float, nullable=False, default=2.5, server_default="2.5")
     interval = Column(Integer, nullable=False, default=0, server_default="0")
     consecutive_correct = Column(Integer, nullable=False, default=0, server_default="0")
-    next_review = Column(DateTime, nullable=False, default=datetime.utcnow, server_default="CURRENT_TIMESTAMP")
+    next_review = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
     box = Column(Integer, nullable=False, default=0, server_default="0")
     
     # Timestamps
