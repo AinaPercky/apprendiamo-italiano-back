@@ -119,14 +119,10 @@ Authentifie un utilisateur existant.
 
 Authentifie ou crée un utilisateur via Google OAuth.
 
-**Request Body:**
+**Request Body (contrat actuel du Studio):**
 ```json
 {
-  "google_id": "123456789",
-  "google_email": "user@gmail.com",
-  "first_name": "John",
-  "last_name": "Doe",
-  "google_picture": "https://..."
+  "token": "<Google ID token reçu dans response.credential>"
 }
 ```
 
@@ -139,7 +135,7 @@ Authentifie ou crée un utilisateur via Google OAuth.
 }
 ```
 
-**Note:** Le `google_id` doit être validé côté frontend avant d'être envoyé au backend.
+**Sécurité :** le backend vérifie lui-même la signature, l'audience, l'émetteur, l'expiration et la validation de l'adresse email du Google ID token. Les champs d'identité décodés par le navigateur ne constituent jamais une preuve d'identité.
 
 ---
 
@@ -340,18 +336,12 @@ google.accounts.id.initialize({
 // Callback après authentification Google
 async function handleCredentialResponse(response) {
   const googleToken = response.credential;
-  
-  // Envoyer le token au backend
+
+  // Envoyer le jeton brut : le backend valide lui-même les claims.
   const authResponse = await fetch('/api/users/google-login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      google_id: decodedToken.sub,
-      google_email: decodedToken.email,
-      first_name: decodedToken.given_name,
-      last_name: decodedToken.family_name,
-      google_picture: decodedToken.picture
-    })
+    body: JSON.stringify({ token: googleToken })
   });
   
   const { access_token, user } = await authResponse.json();
@@ -435,3 +425,26 @@ const userProfile = await profileResponse.json();
 - Vérifier que le `GOOGLE_CLIENT_ID` est correct
 - Vérifier que l'URI est autorisé dans Google Cloud Console
 - Vérifier que le token Google n'a pas expiré
+
+
+---
+
+## Contrat Google OAuth vérifié (P0-02)
+
+Le Studio actuel (`bella-design-lab/src/services/authApi.ts`) appelle :
+- `GET /api/users/oauth/google-config` et lit `client_id`.
+- `POST /api/users/google-login` avec le corps JSON `{"token": googleCredential}`.
+
+Le backend applique désormais exactement ce contrat. Le Client ID est un identifiant public ; aucun `GOOGLE_CLIENT_SECRET` n'est requis ou exposé pour le flux Google Identity Services basé sur un ID token.
+
+Le backend valide le jeton avec `google-auth` et vérifie notamment la signature, l'audience attendue, l'expiration, l'émetteur Google, le `sub`, ainsi que `email_verified=true`. Les noms, l'adresse et la photo sont extraits exclusivement des claims validés.
+
+### Gestion des comptes existants
+
+La correspondance d'un compte Google existant repose uniquement sur le `sub` Google (`google_id`). Si une adresse email Google correspond à un compte local existant qui n'est pas déjà lié à ce `sub`, l'API renvoie `409 Conflict` : aucune fusion automatique n'est effectuée. Une liaison explicite depuis une session authentifiée fera l'objet d'un chantier distinct.
+
+### Erreurs Google OAuth
+
+- `401` : jeton invalide, expiré ou adresse email Google non vérifiée.
+- `409` : un compte existe déjà avec cette adresse et n'est pas lié à cette identité Google.
+- `503` : `GOOGLE_CLIENT_ID` absent côté backend.
