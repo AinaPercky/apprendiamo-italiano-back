@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from .database import get_db
 from . import models
+from .client_applications import get_client_application
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -46,14 +47,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Crée un token JWT d'accès avec un type explicite."""
     to_encode = data.copy()
-    expire = datetime.utcnow() + (
-        expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    )
-
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     sub = to_encode.get("sub")
     if sub is None:
         raise ValueError("Le champ 'sub' est obligatoire pour créer un token")
-
     to_encode["sub"] = str(sub)
     to_encode.update({"exp": expire, "type": "access"})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -65,7 +62,6 @@ def create_refresh_token(data: dict) -> str:
     sub = to_encode.get("sub")
     if sub is None:
         raise ValueError("Le champ 'sub' est obligatoire pour créer un token")
-
     to_encode["sub"] = str(sub)
     expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire, "type": "refresh"})
@@ -73,11 +69,7 @@ def create_refresh_token(data: dict) -> str:
 
 
 def verify_token(token: str) -> dict:
-    """Vérifie un JWT et refuse les tokens qui ne sont pas des tokens d'accès.
-
-    Les anciens access tokens sans claim type restent acceptés pendant leur
-    durée de vie résiduelle pour éviter une déconnexion immédiate au déploiement.
-    """
+    """Vérifie un JWT et refuse les tokens qui ne sont pas des tokens d'accès."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
@@ -86,7 +78,6 @@ def verify_token(token: str) -> dict:
             detail="Token invalide ou expiré",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
     token_type = payload.get("type")
     if token_type not in (None, "access"):
         raise HTTPException(
@@ -94,7 +85,6 @@ def verify_token(token: str) -> dict:
             detail="Type de token non autorisé",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
     return payload
 
 
@@ -105,14 +95,12 @@ async def get_current_user(
     """Récupère l'utilisateur à partir du token Bearer."""
     payload = verify_token(credentials.credentials)
     sub = payload.get("sub")
-
     if not sub:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token invalide : champ 'sub' manquant",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
     try:
         user_pk = int(sub)
     except (ValueError, TypeError):
@@ -121,23 +109,16 @@ async def get_current_user(
             detail="Token invalide : 'sub' doit être un entier",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
     result = await db.execute(select(models.User).where(models.User.user_pk == user_pk))
     user = result.scalars().first()
-
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Utilisateur non trouvé",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Compte utilisateur inactif",
-        )
-
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Compte utilisateur inactif")
     return user
 
 
@@ -158,8 +139,13 @@ ROLE_ETUDIANT = "etudiant"
 
 async def get_current_active_user(
     current_user: models.User = Depends(get_current_user),
+    _client_application: Optional[dict] = Depends(get_client_application),
 ) -> models.User:
-    """Vérifie que l'utilisateur est actif."""
+    """Vérifie le compte et valide l'identifiant applicatif optionnel.
+
+    L'absence de X-Client-App reste autorisée pour préserver les clients existants.
+    L'identifiant enregistré ne confère aucun privilège supplémentaire.
+    """
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Utilisateur inactif")
     return current_user
@@ -174,18 +160,21 @@ def require_roles(*allowed_roles: str):
 
 
 async def require_admin(current_user: models.User = Depends(get_current_active_user)) -> models.User:
-    if current_user.role != ROLE_ADMIN:
+    from .permissions import has_permission
+    if not has_permission(current_user, "client_apps:manage"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Droits administrateur requis")
     return current_user
 
 
 async def require_teacher_or_admin(current_user: models.User = Depends(get_current_active_user)) -> models.User:
-    if current_user.role not in {ROLE_ADMIN, ROLE_PROFESSEUR}:
+    from .permissions import has_permission
+    if not has_permission(current_user, "content:create"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Droits professeur ou administrateur requis")
     return current_user
 
 
 async def require_student_or_above(current_user: models.User = Depends(get_current_active_user)) -> models.User:
-    if current_user.role not in {ROLE_ADMIN, ROLE_PROFESSEUR, ROLE_ETUDIANT}:
+    from .permissions import has_permission
+    if not has_permission(current_user, "content:read"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Rôle utilisateur invalide")
     return current_user
