@@ -1,9 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from datetime import timedelta
 
 from ..database import get_db
 from .. import schemas, crud_users
+from ..crud_google_users import (
+    GoogleAccountConflictError,
+    create_or_update_google_user,
+)
+from ..schemas_google_oauth import GoogleLoginRequest, VerifiedGoogleIdentity
+from ..google_oauth import (
+    GoogleOAuthConfigurationError,
+    GoogleOAuthError,
+    get_google_oauth_config,
+    validate_and_extract_google_user,
+)
 from ..security import (
     create_access_token,
     create_refresh_token,
@@ -27,7 +39,7 @@ async def register(
 ):
     """
     Enregistre un nouvel utilisateur avec email et mot de passe.
-    
+
     - **email**: Email unique de l'utilisateur
     - **username**: Nom d'utilisateur unique
     - **password**: Mot de passe (sera haché)
@@ -41,17 +53,15 @@ async def register(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
-    
-    # Mettre à jour la dernière connexion
+
     await crud_users.update_last_login(db, user)
-    
-    # Créer les tokens
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.user_pk},
         expires_delta=access_token_expires
     )
-    
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -64,37 +74,30 @@ async def login(
     credentials: schemas.UserLogin,
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Authentifie un utilisateur avec email et mot de passe.
-    
-    - **email**: Email de l'utilisateur
-    - **password**: Mot de passe
-    """
+    """Authentifie un utilisateur avec email et mot de passe."""
     user = await crud_users.authenticate_user(db, credentials.email, credentials.password)
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive"
         )
-    
-    # Mettre à jour la dernière connexion
+
     await crud_users.update_last_login(db, user)
-    
-    # Créer les tokens
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.user_pk},
         expires_delta=access_token_expires
     )
-    
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -104,36 +107,65 @@ async def login(
 
 @router.post("/google-login", response_model=schemas.TokenResponse)
 async def google_login(
-    user_data: schemas.UserGoogleLogin,
+    user_data: GoogleLoginRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Authentifie ou crée un utilisateur via Google OAuth.
-    
-    - **google_id**: ID unique Google
-    - **google_email**: Email Google
-    - **first_name**: Prénom (optionnel)
-    - **last_name**: Nom de famille (optionnel)
-    - **google_picture**: URL de la photo de profil (optionnel)
+    Authentifie Google Identity Services.
+
+    Le Studio transmet le champ `token` contenant response.credential.
+    Les claims d'identité fournis séparément par le navigateur ne sont jamais
+    utilisés comme preuve d'identité.
     """
     try:
-        user = await crud_users.create_or_update_google_user(db, user_data)
-    except Exception as e:
+        verified = await validate_and_extract_google_user(user_data.token)
+    except GoogleOAuthConfigurationError:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google authentication is not configured",
         )
-    
-    # Mettre à jour la dernière connexion
+    except GoogleOAuthError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google credential is invalid or expired",
+        )
+
+    identity = VerifiedGoogleIdentity(
+        google_id=verified["google_id"],
+        google_email=verified["email"],
+        first_name=verified["first_name"],
+        last_name=verified["last_name"],
+        google_picture=verified["picture"],
+    )
+
+    try:
+        user = await create_or_update_google_user(db, identity)
+    except GoogleAccountConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A user account already exists for this Google identity or email",
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is inactive",
+        )
+
     await crud_users.update_last_login(db, user)
-    
-    # Créer les tokens
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.user_pk},
         expires_delta=access_token_expires
     )
-    
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -159,7 +191,7 @@ async def update_current_user_profile(
     current_user = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Met à jour le profil de l'utilisateur actuel."""
+    """Met à jour les informations du profil actuel."""
     updated_user = await crud_users.update_user(db, current_user, user_data)
     return schemas.UserDetailResponse.model_validate(updated_user)
 
@@ -194,7 +226,7 @@ async def add_deck_to_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
-    
+
     return schemas.UserDeckResponse.model_validate(user_deck)
 
 
@@ -214,12 +246,8 @@ async def get_all_decks_with_user_stats(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Récupère TOUS les decks du système avec les statistiques personnalisées de l'utilisateur.
-    
-    Pour un nouveau utilisateur :
-    - Tous les decks du système sont affichés
-    - Les decks non commencés ont une précision de 0%
-    - Les decks commencés affichent les vraies statistiques de l'utilisateur
+    Récupère tous les decks du système avec les statistiques personnalisées
+    de l'utilisateur.
     """
     all_decks = await crud_users.get_all_decks_with_user_stats(db, current_user.user_pk)
     return [schemas.UserDeckResponse.model_validate(ud) for ud in all_decks]
@@ -231,10 +259,7 @@ async def get_deck_stats(
     current_user = Depends(require_teacher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Récupère les statistiques détaillées pour un deck spécifique.
-    Retourne des stats à 0 si le deck n'est pas encore commencé.
-    """
+    """Récupère les statistiques détaillées d'un deck."""
     try:
         user_deck = await crud_users.get_user_deck_stats(db, current_user.user_pk, deck_pk)
         return schemas.UserDeckResponse.model_validate(user_deck)
@@ -251,15 +276,15 @@ async def remove_deck_from_user(
     current_user = Depends(require_teacher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Supprime un deck de la collection d'un professeur ou d'un administrateur."""
+    """Supprime un deck de la collection d'un professeur ou administrateur."""
     success = await crud_users.remove_user_deck(db, current_user.user_pk, deck_pk)
-    
+
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Deck not found in user collection"
         )
-    
+
     return {"message": "Deck removed successfully"}
 
 
@@ -298,7 +323,7 @@ async def get_user_deck_scores(
     current_user = Depends(require_teacher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Récupère les scores de l'utilisateur actuel pour un deck spécifique."""
+    """Récupère les scores de l'utilisateur actuel pour un deck."""
     scores = await crud_users.get_user_deck_scores(db, current_user.user_pk, deck_pk, limit, offset)
     return [schemas.UserScore.model_validate(s) for s in scores]
 
@@ -313,7 +338,7 @@ async def create_user_audio(
     current_user = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Crée un nouvel enregistrement audio pour l'utilisateur actuel."""
+    """Crée un nouvel enregistrement audio utilisateur."""
     audio = await crud_users.create_user_audio(db, current_user.user_pk, audio_data)
     return schemas.UserAudio.model_validate(audio)
 
@@ -336,15 +361,15 @@ async def delete_user_audio(
     current_user = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Supprime un enregistrement audio de l'utilisateur actuel."""
+    """Supprime un enregistrement audio utilisateur."""
     success = await crud_users.delete_user_audio(db, audio_pk, current_user.user_pk)
-    
+
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Audio record not found"
         )
-    
+
     return {"message": "Audio deleted successfully"}
 
 
@@ -367,10 +392,15 @@ async def get_user_stats(
 # ============================================================================
 
 @router.get("/oauth/google-config")
-async def get_google_oauth_config():
-    """Récupère la configuration Google OAuth pour le frontend."""
-    from ..google_oauth import get_google_oauth_config
-    return get_google_oauth_config()
+async def get_google_oauth_config_endpoint():
+    """Expose le Client ID public requis par le bouton Google Sign-In."""
+    try:
+        return get_google_oauth_config()
+    except GoogleOAuthConfigurationError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google authentication is not configured",
+        )
 
 
 # ============================================================================
@@ -384,11 +414,11 @@ async def get_user(
 ):
     """Récupère les informations publiques d'un utilisateur."""
     user = await crud_users.get_user_by_id(db, user_pk)
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    
+
     return schemas.UserResponse.model_validate(user)

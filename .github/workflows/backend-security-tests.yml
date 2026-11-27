@@ -1,0 +1,31 @@
+name: Backend security tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  security-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TESTING: "1"
+      SECRET_KEY: "test-only-secret-key-for-apprendiamo-backend"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+      - name: Install backend and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest pytest-asyncio
+      - name: Run JWT and Google OAuth tests
+        run: python -m pytest -q test_security.py test_google_oauth.py
