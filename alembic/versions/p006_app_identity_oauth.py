@@ -31,6 +31,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("code_hash", name="uq_oauth_authorization_codes_hash"),
     )
     op.create_index("ix_oauth_authorization_codes_expiry", "oauth_authorization_codes", ["expires_at"])
+    op.create_index("ix_oauth_authorization_codes_client_code", "oauth_authorization_codes", ["client_code"])
     op.create_index("ix_oauth_authorization_codes_user", "oauth_authorization_codes", ["user_pk"])
     op.execute("""
         INSERT INTO client_applications
@@ -46,6 +47,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index("ix_oauth_authorization_codes_client_code", table_name="oauth_authorization_codes")
     op.drop_index("ix_oauth_authorization_codes_user", table_name="oauth_authorization_codes")
     op.drop_index("ix_oauth_authorization_codes_expiry", table_name="oauth_authorization_codes")
     op.drop_table("oauth_authorization_codes")
