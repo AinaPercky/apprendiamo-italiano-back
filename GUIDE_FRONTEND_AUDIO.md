@@ -9,6 +9,14 @@ Le backend propose **deux types d'audios** :
 
 ## 🎵 1. AudioItem - Audios Système
 
+### Visibilité et accès (P0-04)
+- Les audios avec `visibility = global` et `published_at` renseigné restent consultables publiquement, sans changement du contrat de lecture du Studio.
+- Les audios privés ou non publiés ne sont pas inclus dans les listes publiques et ne peuvent pas être lus par URL directe.
+- Un professeur peut consulter ses propres audios privés ; un administrateur peut consulter tous les audios.
+- Les fichiers privés sont servis avec `Cache-Control: private, no-store` pour éviter leur conservation dans un cache partagé.
+- Les routes de création et de suppression restent réservées aux professeurs et administrateurs.
+
+
 ### Description
 Les AudioItem sont des audios générés par TTS (Text-to-Speech) et disponibles pour tous les utilisateurs. Ils sont utilisés pour les exemples de prononciation.
 
