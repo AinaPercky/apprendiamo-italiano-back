@@ -233,7 +233,7 @@ async def add_deck_to_user(
 
 @router.get("/decks", response_model=list[schemas.UserDeckResponse])
 async def get_user_decks(
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(get_current_studio_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Récupère tous les decks de l'utilisateur actuel."""
@@ -243,7 +243,7 @@ async def get_user_decks(
 
 @router.get("/decks/all", response_model=list[schemas.UserDeckResponse])
 async def get_all_decks_with_user_stats(
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(get_current_studio_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -296,7 +296,7 @@ async def remove_deck_from_user(
 @router.post("/scores", response_model=schemas.UserScore, status_code=status.HTTP_201_CREATED)
 async def create_user_score(
     score_data: schemas.UserScoreCreate,
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(get_current_studio_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Enregistre un nouveau score pour l'utilisateur actuel."""
@@ -308,7 +308,7 @@ async def create_user_score(
 async def get_user_scores(
     limit: int = 100,
     offset: int = 0,
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(get_current_studio_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Récupère les scores de l'utilisateur actuel."""
@@ -336,7 +336,7 @@ async def get_user_deck_scores(
 @router.post("/audio", response_model=schemas.UserAudio, status_code=status.HTTP_201_CREATED)
 async def create_user_audio(
     audio_data: schemas.UserAudioCreate,
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(get_current_studio_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Crée un nouvel enregistrement audio utilisateur."""
@@ -348,7 +348,7 @@ async def create_user_audio(
 async def get_user_audio(
     limit: int = 50,
     offset: int = 0,
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(get_current_studio_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Récupère les enregistrements audio de l'utilisateur actuel."""
@@ -359,7 +359,7 @@ async def get_user_audio(
 @router.delete("/audio/{audio_pk}")
 async def delete_user_audio(
     audio_pk: int,
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(get_current_studio_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Supprime un enregistrement audio utilisateur."""
@@ -380,7 +380,7 @@ async def delete_user_audio(
 
 @router.get("/stats", response_model=schemas.UserStatsResponse)
 async def get_user_stats(
-    current_user = Depends(get_current_active_user),
+    current_user = Depends(get_current_studio_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Récupère les statistiques complètes de l'utilisateur actuel."""
