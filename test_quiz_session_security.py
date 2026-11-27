@@ -177,6 +177,7 @@ async def test_complete_endpoint_passes_authenticated_owner_to_crud(monkeypatch)
         completed_at=datetime.utcnow(),
     )
     complete = AsyncMock(return_value=session)
+    db = object()
     monkeypatch.setattr(endpoints_quiz.crud_quiz, "complete_quiz_session", complete)
 
     response = await endpoints_quiz.complete_quiz(
@@ -184,12 +185,12 @@ async def test_complete_endpoint_passes_authenticated_owner_to_crud(monkeypatch)
         correct_count=3,
         total_questions=5,
         current_user=SimpleNamespace(user_pk=12),
-        db=object(),
+        db=db,
     )
 
     assert response.session_pk == 91
     complete.assert_awaited_once_with(
-        object(),
+        db,
         91,
         3,
         5,
