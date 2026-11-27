@@ -27,5 +27,5 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install pytest pytest-asyncio
-      - name: Run JWT and Google OAuth tests
-        run: python -m pytest -q test_security.py test_google_oauth.py
+      - name: Run backend security tests
+        run: python -m pytest -q test_security.py test_google_oauth.py test_quiz_session_security.py
