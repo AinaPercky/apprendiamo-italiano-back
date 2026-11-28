@@ -42,4 +42,4 @@ jobs:
             --request POST \
             --header "Authorization: Bearer ${SYNC_CRON_SECRET}" \
             --header "Accept: application/json" \
-            "https://apprendiamo-italiano-backend-dufrwm1l3.vercel.app/internal/sync/reconcile"
+            "https://apprendiamo-italiano-backend.vercel.app/internal/sync/reconcile"
