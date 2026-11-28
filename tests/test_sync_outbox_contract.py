@@ -5,7 +5,8 @@ import json
 import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table, delete, insert, update
 
-from app.database import DualWriteSession
+from app.database import Base, DualWriteSession, _apply_event
+from app.client_applications import client_applications as _client_applications
 
 
 class FrozenFakeResult:
@@ -120,3 +121,84 @@ async def test_existing_returning_columns_are_not_duplicated():
     assert {column.name for column in returned_columns} == {"id", "front"}
     assert result.mappings().all() == [{"id": 9, "front": "ciao"}]
     assert json.loads(session._mutations[0][1]["pk_json"]) == {"id": 9}
+
+
+class FakeApplySession:
+    def __init__(self):
+        self.executed = []
+
+    async def execute(self, statement):
+        self.executed.append(statement)
+        return type("Result", (), {"rowcount": 0})()
+
+
+def make_outbox_event(table_name="client_applications", operation="upsert", pk=None, payload=None):
+    return {
+        "table_name": table_name,
+        "operation": operation,
+        "pk_json": json.dumps(pk if pk is not None else {"client_application_pk": 7}),
+        "payload_json": json.dumps(payload if payload is not None else {
+            "client_application_pk": 7,
+            "code": "studio",
+            "name": "Studio",
+            "client_type": "internal",
+            "allowed_origins": "[]",
+            "is_active": True,
+        }),
+    }
+
+
+@pytest.mark.asyncio
+async def test_apply_event_rejects_unknown_table_instead_of_marking_it_applied():
+    session = FakeApplySession()
+
+    with pytest.raises(LookupError, match="Table de réplication inconnue"):
+        await _apply_event(session, make_outbox_event(table_name="table_absente"))
+
+    assert session.executed == []
+
+
+@pytest.mark.asyncio
+async def test_apply_event_rejects_columns_missing_from_target_schema():
+    session = FakeApplySession()
+    payload = make_outbox_event()["payload_json"]
+    data = json.loads(payload)
+    data["column_from_newer_schema"] = "must not be dropped"
+    event = make_outbox_event(payload=data)
+
+    with pytest.raises(ValueError, match="Colonnes absentes du schéma cible"):
+        await _apply_event(session, event)
+
+    assert session.executed == []
+
+
+@pytest.mark.asyncio
+async def test_apply_event_rejects_incomplete_primary_key():
+    session = FakeApplySession()
+    event = make_outbox_event(pk={"unknown_pk": 7})
+
+    with pytest.raises(ValueError, match="Colonnes absentes du schéma cible|Clé primaire incomplète"):
+        await _apply_event(session, event)
+
+    assert session.executed == []
+
+
+@pytest.mark.asyncio
+async def test_apply_event_rejects_outbox_recursion():
+    session = FakeApplySession()
+
+    with pytest.raises(ValueError, match="sync_outbox"):
+        await _apply_event(session, make_outbox_event(table_name="sync_outbox"))
+
+    assert session.executed == []
+
+
+@pytest.mark.asyncio
+async def test_apply_event_rejects_unknown_operation():
+    session = FakeApplySession()
+    event = make_outbox_event(operation="truncate")
+
+    with pytest.raises(ValueError, match="Opération outbox non prise en charge"):
+        await _apply_event(session, event)
+
+    assert session.executed == []

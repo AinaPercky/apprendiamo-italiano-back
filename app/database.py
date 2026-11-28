@@ -343,21 +343,57 @@ class DualWriteSession:
 
 
 async def _apply_event(session: AsyncSession, event: dict):
-    """Applique un événement upsert/delete sans supposer le modèle Python."""
-    table = Base.metadata.tables.get(event["table_name"])
-    if table is None or table.name == "sync_outbox":
-        return
+    """Applique un événement uniquement si son contrat correspond au schéma connu.
+
+    Toute divergence doit rester en attente dans l'outbox : ignorer un événement
+    ferait croire au worker que la réplication est terminée alors que des données
+    ont été perdues.
+    """
+    table_name = event.get("table_name")
+    table = Base.metadata.tables.get(table_name)
+    if table is None:
+        raise LookupError(f"Table de réplication inconnue dans les métadonnées: {table_name!r}")
+    if table.name == "sync_outbox":
+        raise ValueError("La table sync_outbox ne peut pas être répliquée comme donnée métier")
+
     payload = json.loads(event["payload_json"])
     pk = json.loads(event["pk_json"])
-    payload = {key: _restore_value(table.c[key], value) for key, value in payload.items() if key in table.c}
-    pk = {key: _restore_value(table.c[key], value) for key, value in pk.items() if key in table.c}
-    where = [table.c[key] == value for key, value in pk.items() if key in table.c]
-    if event["operation"] == "delete":
-        if where:
-            await session.execute(table.delete().where(*where))
+    if not isinstance(payload, dict) or not isinstance(pk, dict) or not pk:
+        raise ValueError("Événement outbox invalide: payload et clé primaire doivent être des objets non vides")
+
+    table_columns = set(table.c.keys())
+    unknown_payload_columns = set(payload) - table_columns
+    unknown_pk_columns = set(pk) - table_columns
+    if unknown_payload_columns or unknown_pk_columns:
+        unknown = sorted(unknown_payload_columns | unknown_pk_columns)
+        raise ValueError(f"Colonnes absentes du schéma cible pour {table.name}: {', '.join(unknown)}")
+
+    expected_pk = {column.key for column in table.primary_key.columns}
+    if set(pk) != expected_pk:
+        raise ValueError(
+            f"Clé primaire incomplète pour {table.name}: "
+            f"attendu {sorted(expected_pk)}, reçu {sorted(pk)}"
+        )
+
+    payload = {key: _restore_value(table.c[key], value) for key, value in payload.items()}
+    pk = {key: _restore_value(table.c[key], value) for key, value in pk.items()}
+    where = [table.c[key] == value for key, value in pk.items()]
+
+    operation = event.get("operation")
+    if operation == "delete":
+        await session.execute(table.delete().where(*where))
         return
-    result = await session.execute(table.update().where(*where).values(**payload)) if where else None
-    if result is None or result.rowcount == 0:
+    if operation != "upsert":
+        raise ValueError(f"Opération outbox non prise en charge: {operation!r}")
+    if not payload:
+        raise ValueError(f"Payload upsert vide pour {table.name}")
+    if not expected_pk.issubset(payload):
+        raise ValueError(f"Payload upsert sans clé primaire complète pour {table.name}")
+    if any(payload[key] != pk[key] for key in expected_pk):
+        raise ValueError(f"Clé primaire incohérente entre payload et pk_json pour {table.name}")
+
+    result = await session.execute(table.update().where(*where).values(**payload))
+    if result.rowcount == 0:
         await session.execute(table.insert().values(**payload))
 
 

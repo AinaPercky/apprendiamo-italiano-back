@@ -32,3 +32,14 @@ Les mutations suivies par une même session sont rejouées dans l'ordre où la f
 ## Validation
 
 La suite `tests/test_sync_outbox_contract.py` vérifie les DML INSERT/UPDATE/DELETE, les clés primaires, le retour des valeurs `RETURNING` et le refus des tables non réplicables.
+
+## Validation stricte à la réplication
+
+Le récepteur valide le schéma avant toute écriture :
+- une table absente des métadonnées provoque une erreur explicite ;
+- la table technique `sync_outbox` ne peut pas être rejouée comme donnée métier ;
+- toute colonne inconnue dans le payload ou la clé primaire provoque une erreur (aucun champ n'est supprimé silencieusement) ;
+- la clé primaire doit contenir exactement toutes les colonnes de la clé cible ;
+- les opérations inconnues et les payloads upsert incohérents sont refusés.
+
+Une erreur de contrat doit laisser l'événement en attente et visible pour la supervision. Elle ne doit jamais être transformée en succès. Cette validation ne remplace pas l'alignement préalable des schémas Neon et Supabase : les migrations de compatibilité restent une étape séparée, à vérifier avant tout déploiement.
