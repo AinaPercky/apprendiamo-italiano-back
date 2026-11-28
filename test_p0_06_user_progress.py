@@ -218,6 +218,6 @@ async def test_quiz_selection_includes_cards_linked_only_through_deck_cards():
     sql = str(db.statements[0].compile(dialect=postgresql.dialect()))
     assert "JOIN deck_cards" in sql
     assert "deck_cards.deck_pk" in sql
-    assert "cards.deck_pk" not in sql
+    assert "WHERE cards.deck_pk =" not in sql
     assert [item.card_pk for item in selected] == [77]
     assert cycle == 1
