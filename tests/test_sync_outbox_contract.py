@@ -123,21 +123,34 @@ async def test_existing_returning_columns_are_not_duplicated():
 
 
 class FakeTargetResult:
-    def __init__(self, rowcount=0):
+    def __init__(self, rowcount=0, scalar=None):
         self.rowcount = rowcount
+        self._scalar = scalar
+
+    def scalar_one_or_none(self):
+        return self._scalar
 
 
 class FakeTargetSession:
     def __init__(self):
         self.executed = []
+        self.receipt_attempts = 0
 
     async def execute(self, statement):
         self.executed.append(statement)
+        table = getattr(statement, "table", None)
+        if getattr(table, "name", None) == "sync_event_receipts":
+            self.receipt_attempts += 1
+            # The first delivery inserts the receipt; later deliveries collide
+            # on event_id and must not apply the business mutation again.
+            return FakeTargetResult(scalar="event-1" if self.receipt_attempts == 1 else None)
         return FakeTargetResult(rowcount=0)
 
 
 def _replication_event(table_name, payload, pk, operation="upsert"):
     return {
+        "event_id": "event-1",
+        "source_db": "neon",
         "table_name": table_name,
         "operation": operation,
         "payload_json": json.dumps(payload),
@@ -215,3 +228,54 @@ async def test_replay_rejects_unknown_operation():
         assert target.executed == []
     finally:
         Base.metadata.remove(table)
+
+@pytest.mark.asyncio
+async def test_replay_is_idempotent_when_source_acknowledgement_was_lost():
+    table_name = "p072_idempotence_test"
+    table = Table(
+        table_name,
+        Base.metadata,
+        Column("id", Integer, primary_key=True),
+        Column("value", String(40), nullable=False),
+    )
+    target = FakeTargetSession()
+    event = _replication_event(table_name, {"id": 1, "value": "stable"}, {"id": 1})
+
+    try:
+        await _apply_event(target, event)
+        await _apply_event(target, event)
+
+        receipt_writes = [
+            statement for statement in target.executed
+            if getattr(getattr(statement, "table", None), "name", None) == "sync_event_receipts"
+        ]
+        business_writes = [
+            statement for statement in target.executed
+            if getattr(getattr(statement, "table", None), "name", None) == table_name
+        ]
+        assert len(receipt_writes) == 2
+        assert len(business_writes) == 1
+        assert target.receipt_attempts == 2
+    finally:
+        Base.metadata.remove(table)
+
+
+@pytest.mark.asyncio
+async def test_replay_rejects_payload_primary_key_mismatch():
+    table_name = "p072_idempotence_pk_test"
+    table = Table(
+        table_name,
+        Base.metadata,
+        Column("id", Integer, primary_key=True),
+        Column("value", String(40), nullable=False),
+    )
+    target = FakeTargetSession()
+    event = _replication_event(table_name, {"id": 2, "value": "wrong"}, {"id": 1})
+
+    try:
+        with pytest.raises(ValueError, match="Clé primaire incohérente"):
+            await _apply_event(target, event)
+        assert target.executed == []
+    finally:
+        Base.metadata.remove(table)
+
