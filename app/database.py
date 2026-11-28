@@ -223,11 +223,18 @@ class DualWriteSession:
         # The outbox stores row-level facts, never executable SQL. RETURNING
         # supplies the exact affected rows, including composite primary keys.
         existing_returning = getattr(statement, "_returning", ())
-        returning_ids = set()
-        for expression in existing_returning:
-            clause = expression.__clause_element__() if hasattr(expression, "__clause_element__") else expression
-            returning_ids.add(id(clause))
-        missing_columns = [column for column in table.columns if id(column) not in returning_ids]
+        returning_clauses = [
+            expression.__clause_element__() if hasattr(expression, "__clause_element__") else expression
+            for expression in existing_returning
+        ]
+        missing_columns = [
+            column
+            for column in table.columns
+            if not any(
+                hasattr(clause, "shares_lineage") and column.shares_lineage(clause)
+                for clause in returning_clauses
+            )
+        ]
         tracked_statement = statement.returning(*missing_columns) if missing_columns else statement
         result = await self._active.execute(
             tracked_statement,
