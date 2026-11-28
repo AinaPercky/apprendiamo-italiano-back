@@ -343,21 +343,56 @@ class DualWriteSession:
 
 
 async def _apply_event(session: AsyncSession, event: dict):
-    """Applique un événement upsert/delete sans supposer le modèle Python."""
-    table = Base.metadata.tables.get(event["table_name"])
-    if table is None or table.name == "sync_outbox":
+    """Applique un événement ou échoue explicitement si son contrat est invalide.
+
+    Une incompatibilité de schéma ne doit jamais être transformée en succès :
+    l'appelant doit pouvoir conserver l'événement en attente et le diagnostiquer.
+    """
+    table_name = event.get("table_name")
+    table = Base.metadata.tables.get(table_name)
+    if table is None:
+        raise LookupError(f"Table de réplication inconnue dans les métadonnées: {table_name!r}")
+    if table.name == "sync_outbox":
+        raise ValueError("La table interne sync_outbox ne peut pas être répliquée comme donnée métier")
+
+    try:
+        payload = json.loads(event["payload_json"])
+        pk = json.loads(event["pk_json"])
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("Événement de réplication mal formé: payload ou clé primaire invalide") from exc
+
+    if not isinstance(payload, dict) or not isinstance(pk, dict):
+        raise ValueError("Événement de réplication invalide: payload et clé primaire doivent être des objets JSON")
+
+    unknown_payload_columns = set(payload) - set(table.c.keys())
+    if unknown_payload_columns:
+        raise ValueError(
+            f"Colonnes absentes des métadonnées pour {table.name}: {sorted(unknown_payload_columns)}"
+        )
+
+    unknown_pk_columns = set(pk) - set(table.c.keys())
+    if unknown_pk_columns:
+        raise ValueError(
+            f"Colonnes de clé primaire inconnues pour {table.name}: {sorted(unknown_pk_columns)}"
+        )
+
+    expected_pk_columns = {column.key for column in table.primary_key.columns}
+    if not expected_pk_columns or set(pk) != expected_pk_columns or any(pk[key] is None for key in expected_pk_columns):
+        raise ValueError(f"Clé primaire incomplète ou invalide pour {table.name}")
+
+    payload = {key: _restore_value(table.c[key], value) for key, value in payload.items()}
+    pk = {key: _restore_value(table.c[key], value) for key, value in pk.items()}
+    where = [table.c[key] == value for key, value in pk.items()]
+
+    operation = event.get("operation")
+    if operation == "delete":
+        await session.execute(table.delete().where(*where))
         return
-    payload = json.loads(event["payload_json"])
-    pk = json.loads(event["pk_json"])
-    payload = {key: _restore_value(table.c[key], value) for key, value in payload.items() if key in table.c}
-    pk = {key: _restore_value(table.c[key], value) for key, value in pk.items() if key in table.c}
-    where = [table.c[key] == value for key, value in pk.items() if key in table.c]
-    if event["operation"] == "delete":
-        if where:
-            await session.execute(table.delete().where(*where))
-        return
-    result = await session.execute(table.update().where(*where).values(**payload)) if where else None
-    if result is None or result.rowcount == 0:
+    if operation != "upsert":
+        raise ValueError(f"Opération de réplication inconnue: {operation!r}")
+
+    result = await session.execute(table.update().where(*where).values(**payload))
+    if result.rowcount == 0:
         await session.execute(table.insert().values(**payload))
 
 
