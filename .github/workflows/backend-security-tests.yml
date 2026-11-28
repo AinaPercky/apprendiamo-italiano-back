@@ -29,4 +29,4 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pytest pytest-asyncio
       - name: Run backend security tests
-        run: python -m pytest -q test_security.py test_google_oauth.py test_quiz_session_security.py test_p0_04_access_security.py test_p0_05_permissions.py test_p0_06_user_progress.py tests/test_sync_outbox_contract.py
+        run: python -m pytest -q test_security.py test_google_oauth.py test_quiz_session_security.py test_p0_04_access_security.py test_p0_05_permissions.py test_p0_06_user_progress.py tests/test_sync_outbox_contract.py tests/test_sync_endpoint.py
