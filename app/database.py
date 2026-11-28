@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table, Text, insert, select, text, update, inspect as sa_inspect
+from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table, Text, insert, select, text, update, inspect as sa_inspect, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import NullPool
@@ -117,6 +117,22 @@ sync_event_receipts = Table(
     Column("applied_at", DateTime(timezone=True), nullable=False),
 )
 
+# Internal conflict register. Event payloads remain in sync_outbox; this table
+# stores only stable references and is never replicated as business data.
+sync_conflicts = Table(
+    "sync_conflicts",
+    Base.metadata,
+    Column("conflict_id", String(36), primary_key=True),
+    Column("table_name", String(128), nullable=False),
+    Column("pk_json", Text, nullable=False),
+    Column("neon_event_id", String(36), nullable=False),
+    Column("supabase_event_id", String(36), nullable=False),
+    Column("detected_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
+    Column("status", String(16), nullable=False, server_default=text("'open'")),
+    Column("resolution", Text, nullable=True),
+    Column("resolved_at", DateTime(timezone=True), nullable=True),
+)
+
 
 def _json_default(value):
     if isinstance(value, (datetime, date)):
@@ -183,6 +199,94 @@ def _restore_value(column, value):
     if "numeric" in type_name or "decimal" in type_name:
         return Decimal(value)
     return value
+
+
+def _sync_conflict_id(event_a: dict, event_b: dict) -> str:
+    """Identifiant déterministe partagé entre Neon et Supabase pour une paire."""
+    event_ids = sorted((str(event_a["event_id"]), str(event_b["event_id"])))
+    table_name = str(event_a["table_name"])
+    pk_json = str(event_a["pk_json"])
+    identity = f"{table_name}|{pk_json}|{event_ids[0]}|{event_ids[1]}"
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, identity))
+
+
+async def _find_opposite_pending_events(session: AsyncSession, event: dict, source_name: str) -> list[dict]:
+    """Cherche les événements encore non appliqués de l'autre base pour la même ligne."""
+    statement = (
+        select(sync_outbox)
+        .where(
+            sync_outbox.c.source_db != source_name,
+            sync_outbox.c.table_name == event["table_name"],
+            sync_outbox.c.pk_json == event["pk_json"],
+            or_(
+                sync_outbox.c.status.in_(( "pending", "processing" )),
+                and_(
+                    sync_outbox.c.status == "quarantined",
+                    sync_outbox.c.last_error.like("Conflict:%"),
+                ),
+            ),
+        )
+        .order_by(sync_outbox.c.created_at, sync_outbox.c.event_id)
+        .limit(100)
+    )
+    rows = (await session.execute(statement)).mappings().all()
+    return [dict(row) for row in rows]
+
+
+async def _quarantine_sync_conflict(
+    source_session: AsyncSession,
+    target_session: AsyncSession,
+    source_event: dict,
+    opposite_event: dict,
+    source_name: str,
+) -> str:
+    """Conserve la paire conflictuelle et la met en quarantaine des deux côtés."""
+    conflict_id = _sync_conflict_id(source_event, opposite_event)
+    neon_event_id = source_event["event_id"] if source_name == "neon" else opposite_event["event_id"]
+    supabase_event_id = source_event["event_id"] if source_name == "supabase" else opposite_event["event_id"]
+    conflict = {
+        "conflict_id": conflict_id,
+        "table_name": source_event["table_name"],
+        "pk_json": source_event["pk_json"],
+        "neon_event_id": neon_event_id,
+        "supabase_event_id": supabase_event_id,
+        "detected_at": datetime.now().astimezone(),
+        "status": "open",
+        "resolution": None,
+        "resolved_at": None,
+    }
+    conflict_insert = pg_insert(sync_conflicts).values(**conflict).on_conflict_do_nothing(
+        index_elements=[sync_conflicts.c.conflict_id]
+    )
+    await source_session.execute(conflict_insert)
+    await target_session.execute(conflict_insert)
+
+    safe_reason = "Conflict: concurrent writes for the same primary key"
+    for session, event_id in (
+        (source_session, source_event["event_id"]),
+        (target_session, opposite_event["event_id"]),
+    ):
+        await session.execute(
+            update(sync_outbox)
+            .where(sync_outbox.c.event_id == event_id)
+            .values(
+                status="quarantined",
+                last_error=safe_reason,
+                locked_at=None,
+                locked_by=None,
+            )
+        )
+
+    # The conflict register is written to both databases. Deterministic IDs
+    # make retries safe if one commit succeeds and the other needs recovery.
+    await target_session.commit()
+    await source_session.commit()
+    logger.warning(
+        "Conflit de réplication mis en quarantaine (%s, table=%s)",
+        conflict_id,
+        source_event["table_name"],
+    )
+    return conflict_id
 
 
 async def _healthy(db_engine) -> bool:
@@ -352,13 +456,28 @@ class DualWriteSession:
         await self._active.commit()
         if self._mirror is not None:
             try:
+                applied_event_ids = []
                 for event in events:
+                    opposite_events = await _find_opposite_pending_events(
+                        self._mirror, event, self.active_name
+                    )
+                    if opposite_events:
+                        for opposite_event in opposite_events:
+                            await _quarantine_sync_conflict(
+                                self._active,
+                                self._mirror,
+                                event,
+                                opposite_event,
+                                self.active_name,
+                            )
+                        continue
                     await _apply_event(self._mirror, event)
+                    applied_event_ids.append(event["event_id"])
                 await self._mirror.commit()
-                if events:
+                if applied_event_ids:
                     await self._active.execute(
                         update(sync_outbox)
-                        .where(sync_outbox.c.event_id.in_([event["event_id"] for event in events]))
+                        .where(sync_outbox.c.event_id.in_(applied_event_ids))
                         .values(status="applied", applied_at=datetime.now().astimezone())
                     )
                     await self._active.commit()
@@ -387,7 +506,7 @@ async def _apply_event(session: AsyncSession, event: dict):
     table = Base.metadata.tables.get(table_name)
     if table is None:
         raise LookupError(f"Table de réplication inconnue dans les métadonnées: {table_name!r}")
-    if table.name in {"sync_outbox", "sync_event_receipts"}:
+    if table.name in {"sync_outbox", "sync_event_receipts", "sync_conflicts"}:
         raise ValueError(f"La table interne {table.name} ne peut pas être répliquée comme donnée métier")
 
     try:
@@ -515,6 +634,20 @@ async def _replicate_pending(source_session: AsyncSession, target_session: Async
     for row in rows:
         event = dict(row)
         try:
+            opposite_events = await _find_opposite_pending_events(
+                target_session, event, source_name
+            )
+            if opposite_events:
+                for opposite_event in opposite_events:
+                    await _quarantine_sync_conflict(
+                        source_session,
+                        target_session,
+                        event,
+                        opposite_event,
+                        source_name,
+                    )
+                continue
+
             await _apply_event(target_session, event)
             await target_session.commit()
             await source_session.execute(
