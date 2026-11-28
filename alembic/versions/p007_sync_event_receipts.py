@@ -24,6 +24,9 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
     )
+    # The backend connects as the table owner. RLS prevents accidental public
+    # exposure if this internal table is ever placed behind a client-facing API.
+    op.execute("ALTER TABLE sync_event_receipts ENABLE ROW LEVEL SECURITY")
 
 
 def downgrade() -> None:
