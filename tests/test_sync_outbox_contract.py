@@ -5,7 +5,7 @@ import json
 import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table, delete, insert, update
 
-from app.database import (Base, DualWriteSession, _apply_event, _retry_delay_seconds, _is_supabase_transaction_pooler_url, _normalize_db_url)
+from app.database import (Base, DualWriteSession, _apply_event, _retry_delay_seconds, _is_supabase_transaction_pooler_url, _normalize_db_url, _sync_conflict_id, _quarantine_sync_conflict, sync_conflicts)
 
 
 class FrozenFakeResult:
@@ -321,3 +321,80 @@ def test_supabase_transaction_pooler_disables_prepared_statement_caches():
 )
 def test_supabase_transaction_pooler_detection_does_not_match_other_endpoints(url):
     assert _is_supabase_transaction_pooler_url(url) is False
+
+
+class FakeConflictSession:
+    def __init__(self):
+        self.executed = []
+        self.commits = 0
+
+    async def execute(self, statement):
+        self.executed.append(statement)
+        return FakeTargetResult(scalar="conflict-id")
+
+    async def commit(self):
+        self.commits += 1
+
+
+def test_sync_conflict_id_is_stable_independent_of_event_order():
+    neon_event = {
+        "event_id": "neon-event-1",
+        "source_db": "neon",
+        "table_name": "cards",
+        "pk_json": '{"card_pk":42}',
+    }
+    supabase_event = {
+        "event_id": "supabase-event-1",
+        "source_db": "supabase",
+        "table_name": "cards",
+        "pk_json": '{"card_pk":42}',
+    }
+
+    assert _sync_conflict_id(neon_event, supabase_event) == _sync_conflict_id(
+        supabase_event, neon_event
+    )
+
+
+@pytest.mark.asyncio
+async def test_quarantine_conflict_records_both_events_in_both_databases():
+    source = FakeConflictSession()
+    target = FakeConflictSession()
+    neon_event = {
+        "event_id": "neon-event-1",
+        "source_db": "neon",
+        "table_name": "cards",
+        "pk_json": '{"card_pk":42}',
+    }
+    supabase_event = {
+        "event_id": "supabase-event-1",
+        "source_db": "supabase",
+        "table_name": "cards",
+        "pk_json": '{"card_pk":42}',
+    }
+
+    conflict_id = await _quarantine_sync_conflict(
+        source, target, neon_event, supabase_event, "neon"
+    )
+
+    for session in (source, target):
+        conflict_inserts = [
+            statement for statement in session.executed
+            if getattr(getattr(statement, "table", None), "name", None) == "sync_conflicts"
+        ]
+        outbox_updates = [
+            statement for statement in session.executed
+            if getattr(getattr(statement, "table", None), "name", None) == "sync_outbox"
+        ]
+        assert len(conflict_inserts) == 1
+        assert len(outbox_updates) == 1
+        assert session.commits == 1
+
+    inserted = source.executed[0].compile().params
+    assert inserted["conflict_id"] == conflict_id
+    assert inserted["neon_event_id"] == "neon-event-1"
+    assert inserted["supabase_event_id"] == "supabase-event-1"
+    assert inserted["status"] == "open"
+
+
+def test_sync_conflicts_are_internal_and_registered_for_replay_rejection():
+    assert "sync_conflicts" in Base.metadata.tables
