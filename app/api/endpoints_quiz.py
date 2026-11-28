@@ -94,8 +94,15 @@ async def start_quiz(
         
         # Compter le total de cartes dans le deck
         from sqlalchemy import select, func
-        from ..models import Card
-        stmt = select(func.count(Card.card_pk)).where(Card.deck_pk == config.deck_pk)
+        from .. import models
+        stmt = (
+            select(func.count(func.distinct(models.Card.card_pk)))
+            .join(
+                models.deck_cards,
+                models.Card.card_pk == models.deck_cards.c.card_pk,
+            )
+            .where(models.deck_cards.c.deck_pk == config.deck_pk)
+        )
         result = await db.execute(stmt)
         total_cards = result.scalar() or 0
         
@@ -288,12 +295,18 @@ async def has_seen_card(
     """
     from sqlalchemy import select, and_
     from ..models import CardPerformance
+    from .. import models
 
     result = await db.execute(
-        select(CardPerformance).where(
+        select(CardPerformance)
+        .join(
+            models.deck_cards,
+            CardPerformance.card_pk == models.deck_cards.c.card_pk,
+        )
+        .where(
             and_(
                 CardPerformance.user_pk == current_user.user_pk,
-                CardPerformance.deck_pk == deck_pk,
+                models.deck_cards.c.deck_pk == deck_pk,
                 CardPerformance.card_pk == card_pk,
             )
         )

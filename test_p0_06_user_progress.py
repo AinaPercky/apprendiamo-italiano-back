@@ -129,3 +129,95 @@ async def test_student_card_due_filter_uses_the_authenticated_users_progress():
     assert "card_performance.user_pk" in sql
     assert "card_performance.next_review" in sql
     assert "cards.next_review <=" not in sql
+
+
+class ScalarRows:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def all(self):
+        return self.rows
+
+
+class QueryResult:
+    def __init__(self, rows=None, scalar_value=None):
+        self.rows = rows or []
+        self.scalar_value = scalar_value
+
+    def scalar(self):
+        return self.scalar_value
+
+    def scalars(self):
+        return ScalarRows(self.rows)
+
+    def unique(self):
+        return self
+
+
+class QueryDatabase:
+    def __init__(self, *results):
+        self.results = list(results)
+        self.statements = []
+
+    async def execute(self, statement):
+        self.statements.append(statement)
+        return self.results.pop(0)
+
+
+@pytest.mark.asyncio
+async def test_deck_performances_follow_many_to_many_membership_not_origin_deck():
+    db = QueryDatabase(QueryResult(rows=[]))
+
+    await crud_quiz.get_deck_performances(db, user_pk=11, deck_pk=22)
+
+    sql = str(db.statements[0].compile(dialect=postgresql.dialect()))
+    assert "JOIN deck_cards" in sql
+    assert "deck_cards.deck_pk" in sql
+    assert "card_performance.user_pk" in sql
+    assert "card_performance.deck_pk =" not in sql
+
+
+@pytest.mark.asyncio
+async def test_cycle_card_count_uses_many_to_many_membership():
+    db = QueryDatabase(
+        QueryResult(scalar_value=2),
+        QueryResult(rows=[]),
+    )
+
+    cycle, used_cards = await crud_quiz.get_current_cycle_info(
+        db, user_pk=11, deck_pk=22
+    )
+
+    sql = str(db.statements[0].compile(dialect=postgresql.dialect()))
+    assert "JOIN deck_cards" in sql
+    assert "deck_cards.deck_pk" in sql
+    assert "WHERE cards.deck_pk =" not in sql
+    assert cycle == 1
+    assert used_cards == []
+
+
+@pytest.mark.asyncio
+async def test_quiz_selection_includes_cards_linked_only_through_deck_cards():
+    card = SimpleNamespace(
+        card_pk=77,
+        next_review=datetime.utcnow(),
+        front="ciao",
+        back="bonjour",
+    )
+    db = QueryDatabase(
+        QueryResult(rows=[card]),
+        QueryResult(scalar_value=1),
+        QueryResult(rows=[]),
+        QueryResult(rows=[]),
+    )
+
+    selected, cycle, _message = await crud_quiz.select_cards_for_quiz(
+        db, user_pk=11, deck_pk=22, card_count=1
+    )
+
+    sql = str(db.statements[0].compile(dialect=postgresql.dialect()))
+    assert "JOIN deck_cards" in sql
+    assert "deck_cards.deck_pk" in sql
+    assert "WHERE cards.deck_pk =" not in sql
+    assert [item.card_pk for item in selected] == [77]
+    assert cycle == 1
