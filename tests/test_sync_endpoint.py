@@ -92,3 +92,60 @@ async def test_reconcile_endpoint_fails_closed_when_database_unhealthy(monkeypat
 
     assert error.value.status_code == 503
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_reconcile_endpoint_fails_if_database_degrades_after_cycle(monkeypatch):
+    monkeypatch.setenv("SYNC_CRON_SECRET", "test-secret-value")
+    health_checks = iter([
+        {
+            "active": "neon", "neon": "up", "supabase": "up",
+            "pending_events": {"neon": 0, "supabase": 0}, "dual_write": True,
+        },
+        {
+            "active": "neon", "neon": "up", "supabase": "down",
+            "pending_events": {"neon": 1, "supabase": None}, "dual_write": False,
+        },
+    ])
+    calls = []
+
+    async def fake_status():
+        return next(health_checks)
+
+    async def fake_reconcile():
+        calls.append("reconciled")
+
+    monkeypatch.setattr(endpoints_sync, "get_db_status", fake_status)
+    monkeypatch.setattr(endpoints_sync, "reconcile_once", fake_reconcile)
+
+    with pytest.raises(HTTPException) as error:
+        await endpoints_sync.trigger_sync_reconciliation(
+            authorization="Bearer test-secret-value"
+        )
+
+    assert error.value.status_code == 503
+    assert calls == ["reconciled"]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_endpoint_caps_configured_batch_size(monkeypatch):
+    monkeypatch.setenv("SYNC_CRON_SECRET", "test-secret-value")
+    monkeypatch.setenv("SYNC_BATCH_SIZE", "9000")
+
+    async def fake_status():
+        return {
+            "active": "neon", "neon": "up", "supabase": "up",
+            "pending_events": {"neon": 0, "supabase": 0}, "dual_write": True,
+        }
+
+    async def fake_reconcile():
+        return None
+
+    monkeypatch.setattr(endpoints_sync, "get_db_status", fake_status)
+    monkeypatch.setattr(endpoints_sync, "reconcile_once", fake_reconcile)
+
+    result = await endpoints_sync.trigger_sync_reconciliation(
+        authorization="Bearer test-secret-value"
+    )
+
+    assert result["batch_size_per_direction"] == 500
