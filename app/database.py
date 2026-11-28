@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
@@ -82,6 +83,9 @@ sync_outbox = Table(
     Column("last_error", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("applied_at", DateTime(timezone=True), nullable=True),
+    Column("available_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
+    Column("locked_at", DateTime(timezone=True), nullable=True),
+    Column("locked_by", String(64), nullable=True),
 )
 
 # A receipt is committed atomically with the replicated business row. If the
@@ -438,33 +442,114 @@ async def _apply_event(session: AsyncSession, event: dict):
     await session.execute(statement)
 
 
+def _retry_delay_seconds(attempt: int, base_seconds: int = 5, max_seconds: int = 3600) -> float:
+    """Backoff exponentiel borné avec jitter pour éviter les reprises synchronisées."""
+    safe_attempt = max(1, int(attempt))
+    exponential = min(max_seconds, base_seconds * (2 ** min(safe_attempt - 1, 20)))
+    return random.uniform(exponential * 0.8, exponential * 1.2)
+
+
 async def _replicate_pending(source_session: AsyncSession, target_session: AsyncSession, source_name: str):
-    rows = (await source_session.execute(
+    """Réserve des événements avec lease, puis les applique avec reprise bornée."""
+    now = datetime.now().astimezone()
+    lease_seconds = max(30, int(os.getenv("SYNC_EVENT_LEASE_SECONDS", "120")))
+    batch_size = min(500, max(1, int(os.getenv("SYNC_BATCH_SIZE", "100"))))
+    max_attempts = max(1, int(os.getenv("SYNC_MAX_ATTEMPTS", "10")))
+    worker_id = str(uuid.uuid4())
+
+    # Recover work abandoned by a crashed worker after its lease expires.
+    await source_session.execute(
+        update(sync_outbox)
+        .where(
+            sync_outbox.c.source_db == source_name,
+            sync_outbox.c.status == "processing",
+            sync_outbox.c.locked_at.is_not(None),
+            sync_outbox.c.locked_at < now - timedelta(seconds=lease_seconds),
+        )
+        .values(status="pending", locked_at=None, locked_by=None)
+    )
+    await source_session.commit()
+
+    claim = (
         select(sync_outbox)
-        .where(sync_outbox.c.status == "pending", sync_outbox.c.source_db == source_name)
-        .order_by(sync_outbox.c.created_at)
-        .limit(100)
-    )).mappings().all()
+        .where(
+            sync_outbox.c.source_db == source_name,
+            sync_outbox.c.status == "pending",
+            sync_outbox.c.available_at <= now,
+        )
+        .order_by(sync_outbox.c.created_at, sync_outbox.c.event_id)
+        .limit(batch_size)
+        .with_for_update(skip_locked=True)
+    )
+    rows = (await source_session.execute(claim)).mappings().all()
+    if not rows:
+        return
+
+    event_ids = [row["event_id"] for row in rows]
+    await source_session.execute(
+        update(sync_outbox)
+        .where(sync_outbox.c.event_id.in_(event_ids))
+        .values(status="processing", locked_at=now, locked_by=worker_id)
+    )
+    await source_session.commit()
+
     for row in rows:
         event = dict(row)
         try:
             await _apply_event(target_session, event)
             await target_session.commit()
             await source_session.execute(
-                update(sync_outbox).where(sync_outbox.c.event_id == event["event_id"]).values(
-                    status="applied", attempts=sync_outbox.c.attempts + 1,
-                    applied_at=datetime.now().astimezone(), last_error=None,
+                update(sync_outbox)
+                .where(
+                    sync_outbox.c.event_id == event["event_id"],
+                    sync_outbox.c.status == "processing",
+                    sync_outbox.c.locked_by == worker_id,
+                )
+                .values(
+                    status="applied",
+                    applied_at=datetime.now().astimezone(),
+                    last_error=None,
+                    locked_at=None,
+                    locked_by=None,
                 )
             )
             await source_session.commit()
         except Exception as exc:
             await target_session.rollback()
+            attempts = int(event.get("attempts") or 0) + 1
+            quarantined = attempts >= max_attempts
+            delay = _retry_delay_seconds(attempts)
+            next_status = "quarantined" if quarantined else "pending"
+            # Store only a stable exception class, never SQL text or payloads.
+            safe_error = f"{type(exc).__name__}: replication failed"
             await source_session.execute(
-                update(sync_outbox).where(sync_outbox.c.event_id == event["event_id"]).values(
-                    attempts=sync_outbox.c.attempts + 1, last_error=str(exc)[:4000]
+                update(sync_outbox)
+                .where(
+                    sync_outbox.c.event_id == event["event_id"],
+                    sync_outbox.c.status == "processing",
+                    sync_outbox.c.locked_by == worker_id,
+                )
+                .values(
+                    status=next_status,
+                    attempts=attempts,
+                    available_at=datetime.now().astimezone() + timedelta(seconds=delay),
+                    last_error=safe_error,
+                    locked_at=None,
+                    locked_by=None,
                 )
             )
             await source_session.commit()
+            if quarantined:
+                logger.error(
+                    "Événement outbox placé en quarantaine après %s tentatives (%s)",
+                    attempts,
+                    type(exc).__name__,
+                )
+            else:
+                logger.warning(
+                    "Événement outbox reporté après échec (%s); nouvelle tentative planifiée",
+                    type(exc).__name__,
+                )
 
 
 async def reconcile_once():
