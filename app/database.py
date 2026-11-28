@@ -4,7 +4,7 @@ import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -94,6 +94,25 @@ def _json_default(value):
     return str(value)
 
 
+def _new_outbox_event(table_name: str, operation: str, values: dict, primary_key: dict, source_db: str) -> dict:
+    if not primary_key:
+        raise ValueError(f"Impossible de journaliser {table_name}: clé primaire absente")
+    payload = values if operation != "delete" else primary_key
+    return {
+        "event_id": str(uuid.uuid4()),
+        "source_db": source_db,
+        "table_name": table_name,
+        "operation": operation,
+        "pk_json": json.dumps(primary_key, default=_json_default, sort_keys=True),
+        "payload_json": json.dumps(payload, default=_json_default, sort_keys=True),
+        "status": "pending",
+        "attempts": 0,
+        "last_error": None,
+        "created_at": datetime.now().astimezone(),
+        "applied_at": None,
+    }
+
+
 def _object_event(obj, source_db: str, operation: str) -> dict:
     state = sa_inspect(obj)
     mapper = state.mapper
@@ -103,17 +122,16 @@ def _object_event(obj, source_db: str, operation: str) -> dict:
         if hasattr(obj, key):
             values[key] = getattr(obj, key)
     pk = {column.key: values.get(column.key) for column in mapper.primary_key}
-    return {
-        "event_id": str(uuid.uuid4()),
-        "source_db": source_db,
-        "table_name": mapper.local_table.name,
-        "operation": operation,
-        "pk_json": json.dumps(pk, default=_json_default, sort_keys=True),
-        "payload_json": json.dumps(values if operation != "delete" else pk, default=_json_default, sort_keys=True),
-        "status": "pending",
-        "attempts": 0,
-        "created_at": datetime.now().astimezone(),
-    }
+    return _new_outbox_event(mapper.local_table.name, operation, values, pk, source_db)
+
+
+def _dml_events_from_result(table, rows, source_db: str, operation: str) -> list[dict]:
+    events = []
+    for row in rows:
+        values = {column.key: row[column.key] for column in table.columns}
+        primary_key = {column.key: values.get(column.key) for column in table.primary_key.columns}
+        events.append(_new_outbox_event(table.name, operation, values, primary_key, source_db))
+    return events
 
 
 def _restore_value(column, value):
@@ -158,13 +176,22 @@ class DualWriteSession:
         self._active = active
         self._mirror = mirror
         self.active_name = active_name
-        self._added: list[object] = []
-        self._deleted: list[object] = []
-        self._dml: list[tuple[object, object | None]] = []
+        # Mutations are kept in call order so dependent inserts/deletes are
+        # replayed in the same order on the mirror.
+        self._mutations: list[tuple[str, object, str | None]] = []
+        self._queued_dirty_ids: set[int] = set()
+
+    def _queue_dirty_objects(self):
+        for obj in list(self._active.dirty):
+            object_id = id(obj)
+            if object_id not in self._queued_dirty_ids:
+                self._mutations.append(("object", obj, "upsert"))
+                self._queued_dirty_ids.add(object_id)
 
     def add(self, instance, _warn=True):
         self._active.add(instance, _warn=_warn)
-        self._added.append(instance)
+        self._mutations.append(("object", instance, "upsert"))
+        self._queued_dirty_ids.add(id(instance))
 
     def add_all(self, instances):
         for instance in instances:
@@ -172,21 +199,61 @@ class DualWriteSession:
 
     async def delete(self, instance):
         await self._active.delete(instance)
-        self._deleted.append(instance)
+        self._mutations.append(("object", instance, "delete"))
+        self._queued_dirty_ids.add(id(instance))
 
     async def execute(self, statement, params=None, *, execution_options=None, bind_arguments=None, **kwargs):
+        is_dml = any(getattr(statement, flag, False) for flag in ("is_insert", "is_update", "is_delete"))
+        if not is_dml:
+            return await self._active.execute(
+                statement,
+                params,
+                execution_options=execution_options,
+                bind_arguments=bind_arguments,
+                **kwargs,
+            )
+
+        # Capture ORM changes made before this SQL statement to preserve the
+        # transaction's mutation order on the mirror.
+        self._queue_dirty_objects()
+        table = getattr(statement, "table", None)
+        if table is None or not table.primary_key.columns:
+            raise ValueError("DML non réplicable: table ou clé primaire introuvable")
+
+        # The outbox stores row-level facts, never executable SQL. RETURNING
+        # supplies the exact affected rows, including composite primary keys.
+        existing_returning = getattr(statement, "_returning", ())
+        returning_clauses = [
+            expression.__clause_element__() if hasattr(expression, "__clause_element__") else expression
+            for expression in existing_returning
+        ]
+        missing_columns = [
+            column
+            for column in table.columns
+            if not any(
+                hasattr(clause, "shares_lineage") and column.shares_lineage(clause)
+                for clause in returning_clauses
+            )
+        ]
+        tracked_statement = statement.returning(*missing_columns) if missing_columns else statement
         result = await self._active.execute(
-            statement,
+            tracked_statement,
             params,
             execution_options=execution_options,
             bind_arguments=bind_arguments,
             **kwargs,
         )
-        if getattr(statement, "is_insert", False) or getattr(statement, "is_update", False) or getattr(statement, "is_delete", False):
-            self._dml.append((statement, params))
-        return result
+        frozen_result = result.freeze()
+        rows = frozen_result().mappings().all()
+        operation = "delete" if getattr(statement, "is_delete", False) else "upsert"
+        for event in _dml_events_from_result(table, rows, self.active_name, operation):
+            self._mutations.append(("event", event, None))
+        # Return a fresh buffered result to preserve the caller's ability to
+        # consume RETURNING values after the outbox has inspected them.
+        return frozen_result()
 
     async def flush(self, *args, **kwargs):
+        self._queue_dirty_objects()
         return await self._active.flush(*args, **kwargs)
 
     async def refresh(self, instance, *args, **kwargs):
@@ -196,9 +263,8 @@ class DualWriteSession:
         return await self._active.get(*args, **kwargs)
 
     async def rollback(self):
-        self._added.clear()
-        self._deleted.clear()
-        self._dml.clear()
+        self._mutations.clear()
+        self._queued_dirty_ids.clear()
         await self._active.rollback()
         if self._mirror is not None:
             await self._mirror.rollback()
@@ -229,16 +295,24 @@ class DualWriteSession:
             await self._mirror.merge(clone)
 
     async def commit(self):
-        # Les flush explicites des CRUD ont déjà attribué les clés primaires.
+        # Snapshot ORM mutations before flush clears SQLAlchemy's dirty set.
+        self._queue_dirty_objects()
         await self._active.flush()
-        dirty = list(self._active.dirty)
-        added = list(dict.fromkeys(self._added))
-        deleted = list(dict.fromkeys(self._deleted))
-        dml = list(self._dml)
 
-        events = [_object_event(obj, self.active_name, "upsert") for obj in added + dirty]
-        events += [_object_event(obj, self.active_name, "delete") for obj in deleted]
+        events = []
+        for mutation_type, value, operation in self._mutations:
+            if mutation_type == "event":
+                events.append(value)
+            else:
+                events.append(_object_event(value, self.active_name, operation or "upsert"))
         if events:
+            # created_at is a stable ordering key for recovery after a process
+            # restart; keep the in-transaction mutation order even when ORM
+            # events are materialized later than Core DML events.
+            event_time = datetime.now().astimezone()
+            for index, event in enumerate(events):
+                event["created_at"] = event_time + timedelta(microseconds=index)
+            # Outbox rows and business writes share the same primary transaction.
             await self._active.execute(insert(sync_outbox), events)
 
         await self._active.commit()
@@ -246,10 +320,6 @@ class DualWriteSession:
             try:
                 for event in events:
                     await _apply_event(self._mirror, event)
-                # Les DML simples restent rejoués immédiatement pour préserver
-                # les opérations DELETE/UPDATE existantes non liées à un objet.
-                for statement, params in dml:
-                    await self._mirror.execute(statement, params)
                 await self._mirror.commit()
                 if events:
                     await self._active.execute(
@@ -268,27 +338,61 @@ class DualWriteSession:
         self._clear_tracking()
 
     def _clear_tracking(self):
-        self._added.clear()
-        self._deleted.clear()
-        self._dml.clear()
+        self._mutations.clear()
+        self._queued_dirty_ids.clear()
 
 
 async def _apply_event(session: AsyncSession, event: dict):
-    """Applique un événement upsert/delete sans supposer le modèle Python."""
-    table = Base.metadata.tables.get(event["table_name"])
-    if table is None or table.name == "sync_outbox":
+    """Applique un événement ou échoue explicitement si son contrat est invalide.
+
+    Une incompatibilité de schéma ne doit jamais être transformée en succès :
+    l'appelant doit pouvoir conserver l'événement en attente et le diagnostiquer.
+    """
+    table_name = event.get("table_name")
+    table = Base.metadata.tables.get(table_name)
+    if table is None:
+        raise LookupError(f"Table de réplication inconnue dans les métadonnées: {table_name!r}")
+    if table.name == "sync_outbox":
+        raise ValueError("La table interne sync_outbox ne peut pas être répliquée comme donnée métier")
+
+    try:
+        payload = json.loads(event["payload_json"])
+        pk = json.loads(event["pk_json"])
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("Événement de réplication mal formé: payload ou clé primaire invalide") from exc
+
+    if not isinstance(payload, dict) or not isinstance(pk, dict):
+        raise ValueError("Événement de réplication invalide: payload et clé primaire doivent être des objets JSON")
+
+    unknown_payload_columns = set(payload) - set(table.c.keys())
+    if unknown_payload_columns:
+        raise ValueError(
+            f"Colonnes absentes des métadonnées pour {table.name}: {sorted(unknown_payload_columns)}"
+        )
+
+    unknown_pk_columns = set(pk) - set(table.c.keys())
+    if unknown_pk_columns:
+        raise ValueError(
+            f"Colonnes de clé primaire inconnues pour {table.name}: {sorted(unknown_pk_columns)}"
+        )
+
+    expected_pk_columns = {column.key for column in table.primary_key.columns}
+    if not expected_pk_columns or set(pk) != expected_pk_columns or any(pk[key] is None for key in expected_pk_columns):
+        raise ValueError(f"Clé primaire incomplète ou invalide pour {table.name}")
+
+    payload = {key: _restore_value(table.c[key], value) for key, value in payload.items()}
+    pk = {key: _restore_value(table.c[key], value) for key, value in pk.items()}
+    where = [table.c[key] == value for key, value in pk.items()]
+
+    operation = event.get("operation")
+    if operation == "delete":
+        await session.execute(table.delete().where(*where))
         return
-    payload = json.loads(event["payload_json"])
-    pk = json.loads(event["pk_json"])
-    payload = {key: _restore_value(table.c[key], value) for key, value in payload.items() if key in table.c}
-    pk = {key: _restore_value(table.c[key], value) for key, value in pk.items() if key in table.c}
-    where = [table.c[key] == value for key, value in pk.items() if key in table.c]
-    if event["operation"] == "delete":
-        if where:
-            await session.execute(table.delete().where(*where))
-        return
-    result = await session.execute(table.update().where(*where).values(**payload)) if where else None
-    if result is None or result.rowcount == 0:
+    if operation != "upsert":
+        raise ValueError(f"Opération de réplication inconnue: {operation!r}")
+
+    result = await session.execute(table.update().where(*where).values(**payload))
+    if result.rowcount == 0:
         await session.execute(table.insert().values(**payload))
 
 
