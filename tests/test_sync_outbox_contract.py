@@ -5,7 +5,7 @@ import json
 import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table, delete, insert, update
 
-from app.database import DualWriteSession
+from app.database import Base, DualWriteSession, _apply_event
 
 
 class FrozenFakeResult:
@@ -120,3 +120,98 @@ async def test_existing_returning_columns_are_not_duplicated():
     assert {column.name for column in returned_columns} == {"id", "front"}
     assert result.mappings().all() == [{"id": 9, "front": "ciao"}]
     assert json.loads(session._mutations[0][1]["pk_json"]) == {"id": 9}
+
+
+class FakeTargetResult:
+    def __init__(self, rowcount=0):
+        self.rowcount = rowcount
+
+
+class FakeTargetSession:
+    def __init__(self):
+        self.executed = []
+
+    async def execute(self, statement):
+        self.executed.append(statement)
+        return FakeTargetResult(rowcount=0)
+
+
+def _replication_event(table_name, payload, pk, operation="upsert"):
+    return {
+        "table_name": table_name,
+        "operation": operation,
+        "payload_json": json.dumps(payload),
+        "pk_json": json.dumps(pk),
+    }
+
+
+@pytest.mark.asyncio
+async def test_replay_rejects_unknown_table_instead_of_silent_success():
+    target = FakeTargetSession()
+    event = _replication_event("table_not_registered_for_replication", {"id": 1}, {"id": 1})
+
+    with pytest.raises(LookupError, match="Table de réplication inconnue"):
+        await _apply_event(target, event)
+
+    assert target.executed == []
+
+
+@pytest.mark.asyncio
+async def test_replay_rejects_payload_columns_missing_from_metadata():
+    table_name = "p071_replay_schema_test"
+    table = Table(
+        table_name,
+        Base.metadata,
+        Column("id", Integer, primary_key=True),
+        Column("value", String(40), nullable=False),
+    )
+    target = FakeTargetSession()
+    event = _replication_event(table_name, {"id": 1, "column_only_on_source": "x"}, {"id": 1})
+
+    try:
+        with pytest.raises(ValueError, match="Colonnes absentes des métadonnées"):
+            await _apply_event(target, event)
+        assert target.executed == []
+    finally:
+        Base.metadata.remove(table)
+
+
+@pytest.mark.asyncio
+async def test_replay_rejects_incomplete_primary_key():
+    table_name = "p071_replay_pk_test"
+    table = Table(
+        table_name,
+        Base.metadata,
+        Column("tenant_id", Integer, primary_key=True),
+        Column("item_id", Integer, primary_key=True),
+        Column("value", String(40), nullable=False),
+    )
+    target = FakeTargetSession()
+    event = _replication_event(table_name, {"tenant_id": 1, "item_id": 2, "value": "x"}, {"tenant_id": 1})
+
+    try:
+        with pytest.raises(ValueError, match="Clé primaire incomplète"):
+            await _apply_event(target, event)
+        assert target.executed == []
+    finally:
+        Base.metadata.remove(table)
+
+
+@pytest.mark.asyncio
+async def test_replay_rejects_unknown_operation():
+    table_name = "p071_replay_operation_test"
+    table = Table(
+        table_name,
+        Base.metadata,
+        Column("id", Integer, primary_key=True),
+        Column("value", String(40), nullable=False),
+    )
+    target = FakeTargetSession()
+    event = _replication_event(table_name, {"id": 1, "value": "x"}, {"id": 1}, operation="truncate")
+
+    try:
+        with pytest.raises(ValueError, match="Opération de réplication inconnue"):
+            await _apply_event(target, event)
+        assert target.executed == []
+    finally:
+        Base.metadata.remove(table)
