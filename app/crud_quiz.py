@@ -141,10 +141,18 @@ async def get_deck_performances(
     deck_pk: int
 ) -> List[models.CardPerformance]:
     """Récupère toutes les performances pour un deck donné"""
-    stmt = select(models.CardPerformance).options(joinedload(models.CardPerformance.card)).where(
-        and_(
-            models.CardPerformance.user_pk == user_pk,
-            models.CardPerformance.deck_pk == deck_pk
+    stmt = (
+        select(models.CardPerformance)
+        .join(
+            models.deck_cards,
+            models.CardPerformance.card_pk == models.deck_cards.c.card_pk,
+        )
+        .options(joinedload(models.CardPerformance.card))
+        .where(
+            and_(
+                models.CardPerformance.user_pk == user_pk,
+                models.deck_cards.c.deck_pk == deck_pk,
+            )
         )
     )
     result = await db.execute(stmt)
@@ -167,8 +175,13 @@ async def get_current_cycle_info(
         (cycle_number, used_card_pks)
     """
     # Récupérer toutes les cartes du deck
-    stmt_total = select(func.count(models.Card.card_pk)).where(
-        models.Card.deck_pk == deck_pk
+    stmt_total = (
+        select(func.count(func.distinct(models.Card.card_pk)))
+        .join(
+            models.deck_cards,
+            models.Card.card_pk == models.deck_cards.c.card_pk,
+        )
+        .where(models.deck_cards.c.deck_pk == deck_pk)
     )
     result_total = await db.execute(stmt_total)
     total_cards = result_total.scalar() or 0
@@ -227,7 +240,14 @@ async def select_cards_for_quiz(
         (selected_cards, cycle_number, message)
     """
     # Obtenir les cartes du deck
-    stmt_cards = select(models.Card).where(models.Card.deck_pk == deck_pk)
+    stmt_cards = (
+        select(models.Card)
+        .join(
+            models.deck_cards,
+            models.Card.card_pk == models.deck_cards.c.card_pk,
+        )
+        .where(models.deck_cards.c.deck_pk == deck_pk)
+    )
     result_cards = await db.execute(stmt_cards)
     all_cards = list(result_cards.scalars().all())
     
