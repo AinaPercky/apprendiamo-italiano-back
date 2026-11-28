@@ -10,19 +10,21 @@
 
 Le worker périodique du lifespan FastAPI est conservé pendant la transition. Il ne constitue pas une garantie de traitement continu sur une plateforme serverless ; le scheduler externe est le mécanisme planifié attendu une fois configuré et validé.
 
-## Configuration des secrets et variables
+## Configuration du secret
 
-### Vercel — environnement du backend
+### Vercel — environnement Production du backend
 
-Définir `SYNC_CRON_SECRET` dans les environnements Vercel concernés. Générer une valeur aléatoire longue (au moins 32 octets d'entropie). Ne jamais la placer dans le code, un fichier versionné ou un log.
+Définir `SYNC_CRON_SECRET` dans l'environnement Production du projet backend. Générer une valeur aléatoire forte d'au moins 32 octets d'entropie. Ne jamais la placer dans le code, un fichier versionné ou un log.
 
-### GitHub — Settings → Secrets and variables → Actions
+### GitHub — secret du dépôt
 
-Créer :
-- Variable `SYNC_API_URL` : URL HTTPS complète de `/internal/sync/reconcile`.
-- Secret `SYNC_CRON_SECRET` : exactement la même valeur que celle configurée dans Vercel.
+Dans les paramètres du dépôt → **Secrets and variables** → **Actions**, créer un seul **repository secret** :
 
-Ne pas activer le workflow avant la fusion de P0-07.3.1 et P0-07.3.2 et la configuration des deux valeurs.
+- `SYNC_CRON_SECRET` : exactement la même valeur que celle configurée dans Vercel.
+
+Aucune variable GitHub n'est nécessaire : l'URL HTTPS de production de `/internal/sync/reconcile` est directement définie dans `.github/workflows/sync-replication-scheduler.yml`.
+
+Ne pas lancer le workflow avant que le secret soit configuré des deux côtés. Le backend refuse les appels si le secret est absent ou incorrect.
 
 ## Contrôles de fonctionnement
 
