@@ -11,6 +11,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table, Text, insert, select, text, update, inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,16 @@ sync_outbox = Table(
     Column("last_error", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("applied_at", DateTime(timezone=True), nullable=True),
+)
+
+# A receipt is committed atomically with the replicated business row. If the
+# source acknowledgement is lost, replay sees the receipt and becomes a no-op.
+sync_event_receipts = Table(
+    "sync_event_receipts",
+    Base.metadata,
+    Column("event_id", String(36), primary_key=True),
+    Column("source_db", String(16), nullable=False),
+    Column("applied_at", DateTime(timezone=True), nullable=False),
 )
 
 
@@ -343,24 +354,29 @@ class DualWriteSession:
 
 
 async def _apply_event(session: AsyncSession, event: dict):
-    """Applique un événement ou échoue explicitement si son contrat est invalide.
+    """Applique un événement une seule fois dans la transaction cible.
 
-    Une incompatibilité de schéma ne doit jamais être transformée en succès :
-    l'appelant doit pouvoir conserver l'événement en attente et le diagnostiquer.
+    Le reçu et la mutation métier sont validés dans la même transaction.
+    Si l'accusé de réception de la source est perdu, un replay du même
+    event_id ne réapplique donc pas la mutation.
     """
     table_name = event.get("table_name")
     table = Base.metadata.tables.get(table_name)
     if table is None:
         raise LookupError(f"Table de réplication inconnue dans les métadonnées: {table_name!r}")
-    if table.name == "sync_outbox":
-        raise ValueError("La table interne sync_outbox ne peut pas être répliquée comme donnée métier")
+    if table.name in {"sync_outbox", "sync_event_receipts"}:
+        raise ValueError(f"La table interne {table.name} ne peut pas être répliquée comme donnée métier")
 
     try:
         payload = json.loads(event["payload_json"])
         pk = json.loads(event["pk_json"])
+        event_id = str(event["event_id"])
+        source_db = str(event["source_db"])
     except (KeyError, TypeError, json.JSONDecodeError) as exc:
-        raise ValueError("Événement de réplication mal formé: payload ou clé primaire invalide") from exc
+        raise ValueError("Événement de réplication mal formé: identité, payload ou clé primaire invalide") from exc
 
+    if not event_id or source_db not in {"neon", "supabase"}:
+        raise ValueError("Identité d'événement ou base source invalide")
     if not isinstance(payload, dict) or not isinstance(pk, dict):
         raise ValueError("Événement de réplication invalide: payload et clé primaire doivent être des objets JSON")
 
@@ -382,18 +398,44 @@ async def _apply_event(session: AsyncSession, event: dict):
 
     payload = {key: _restore_value(table.c[key], value) for key, value in payload.items()}
     pk = {key: _restore_value(table.c[key], value) for key, value in pk.items()}
-    where = [table.c[key] == value for key, value in pk.items()]
-
     operation = event.get("operation")
+    if operation not in {"upsert", "delete"}:
+        raise ValueError(f"Opération de réplication inconnue: {operation!r}")
+    if operation == "upsert":
+        if not expected_pk_columns.issubset(payload):
+            raise ValueError(f"Payload incomplet : clé primaire absente pour {table.name}")
+        if any(payload[key] != pk[key] for key in expected_pk_columns):
+            raise ValueError(f"Clé primaire incohérente entre payload et événement pour {table.name}")
+
+    # PostgreSQL's unique receipt key serializes concurrent replays of the
+    # same event. A failed business write rolls this insert back as well.
+    receipt = pg_insert(sync_event_receipts).values(
+        event_id=event_id,
+        source_db=source_db,
+        applied_at=datetime.now().astimezone(),
+    ).on_conflict_do_nothing(index_elements=[sync_event_receipts.c.event_id]).returning(
+        sync_event_receipts.c.event_id
+    )
+    receipt_result = await session.execute(receipt)
+    if receipt_result.scalar_one_or_none() is None:
+        return
+
+    where = [table.c[key] == value for key, value in pk.items()]
     if operation == "delete":
         await session.execute(table.delete().where(*where))
         return
-    if operation != "upsert":
-        raise ValueError(f"Opération de réplication inconnue: {operation!r}")
 
-    result = await session.execute(table.update().where(*where).values(**payload))
-    if result.rowcount == 0:
-        await session.execute(table.insert().values(**payload))
+    primary_key_columns = [table.c[key] for key in expected_pk_columns]
+    update_values = {key: value for key, value in payload.items() if key not in expected_pk_columns}
+    statement = pg_insert(table).values(**payload)
+    if update_values:
+        statement = statement.on_conflict_do_update(
+            index_elements=primary_key_columns,
+            set_=update_values,
+        )
+    else:
+        statement = statement.on_conflict_do_nothing(index_elements=primary_key_columns)
+    await session.execute(statement)
 
 
 async def _replicate_pending(source_session: AsyncSession, target_session: AsyncSession, source_name: str):
