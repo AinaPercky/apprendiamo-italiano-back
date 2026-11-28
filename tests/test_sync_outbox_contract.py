@@ -98,3 +98,25 @@ async def test_core_dml_without_primary_key_is_rejected_before_execution():
 
     assert active.executed == []
     assert session._mutations == []
+
+@pytest.mark.asyncio
+async def test_existing_returning_columns_are_not_duplicated():
+    metadata = MetaData()
+    table = Table(
+        "cards_test",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("front", String(80), nullable=False),
+    )
+    active = FakeActiveSession([{"id": 9, "front": "ciao"}])
+    session = DualWriteSession(active, None, "neon")
+
+    result = await session.execute(
+        delete(table).where(table.c.id == 9).returning(table.c.id)
+    )
+
+    returned_columns = active.executed[0]._returning
+    assert len(returned_columns) == 2
+    assert {column.name for column in returned_columns} == {"id", "front"}
+    assert result.mappings().all() == [{"id": 9, "front": "ciao"}]
+    assert json.loads(session._mutations[0][1]["pk_json"]) == {"id": 9}
