@@ -3,7 +3,7 @@ name: Backend security tests
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main]
+    branches: [main, feat/p0-07-2-1-idempotent-replay]
   push:
     branches: [main]
 
