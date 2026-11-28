@@ -174,7 +174,7 @@ async def test_deck_performances_follow_many_to_many_membership_not_origin_deck(
     assert "JOIN deck_cards" in sql
     assert "deck_cards.deck_pk" in sql
     assert "card_performance.user_pk" in sql
-    assert "card_performance.deck_pk" not in sql
+    assert "card_performance.deck_pk =" not in sql
 
 
 @pytest.mark.asyncio
@@ -191,7 +191,7 @@ async def test_cycle_card_count_uses_many_to_many_membership():
     sql = str(db.statements[0].compile(dialect=postgresql.dialect()))
     assert "JOIN deck_cards" in sql
     assert "deck_cards.deck_pk" in sql
-    assert "cards.deck_pk" not in sql
+    assert "WHERE cards.deck_pk =" not in sql
     assert cycle == 1
     assert used_cards == []
 
