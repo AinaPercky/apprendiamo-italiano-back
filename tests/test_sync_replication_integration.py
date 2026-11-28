@@ -59,8 +59,8 @@ async def test_real_postgres_replay_both_directions_and_quarantine_conflict():
         async with target_engine.begin() as connection:
             await connection.run_sync(db.Base.metadata.create_all)
 
-    neon_event_id = f"it-neon-{uuid.uuid4()}"
-    supabase_event_id = f"it-supabase-{uuid.uuid4()}"
+    neon_event_id = str(uuid.uuid4())
+    supabase_event_id = str(uuid.uuid4())
 
     try:
         # Neon -> Supabase through the actual worker/replay implementation.
@@ -101,8 +101,8 @@ async def test_real_postgres_replay_both_directions_and_quarantine_conflict():
 
         # Two independently-originated pending writes for the same PK must not
         # overwrite either business row; both events and conflict registers persist.
-        neon_conflict_id = f"it-neon-conflict-{uuid.uuid4()}"
-        supabase_conflict_id = f"it-supabase-conflict-{uuid.uuid4()}"
+        neon_conflict_id = str(uuid.uuid4())
+        supabase_conflict_id = str(uuid.uuid4())
         await _insert_event(db.engine, "neon", neon_conflict_id, 303, "neon-version")
         await _insert_event(db.secondary_engine, "supabase", supabase_conflict_id, 303, "supabase-version")
         await db.reconcile_once()
