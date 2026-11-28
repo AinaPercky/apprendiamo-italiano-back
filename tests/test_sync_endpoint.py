@@ -92,3 +92,40 @@ async def test_reconcile_endpoint_fails_closed_when_database_unhealthy(monkeypat
 
     assert error.value.status_code == 503
     assert calls == []
+
+
+
+@pytest.mark.asyncio
+async def test_reconcile_claim_query_caps_configured_batch_size(monkeypatch):
+    from app.database import _replicate_pending
+
+    monkeypatch.setenv("SYNC_BATCH_SIZE", "9000")
+
+    class EmptyResult:
+        def mappings(self):
+            return self
+
+        def all(self):
+            return []
+
+    class RecordingSession:
+        def __init__(self):
+            self.statements = []
+
+        async def execute(self, statement):
+            self.statements.append(statement)
+            return EmptyResult()
+
+        async def commit(self):
+            return None
+
+    source = RecordingSession()
+    target = RecordingSession()
+
+    await _replicate_pending(source, target, "neon")
+
+    claim = next(
+        statement for statement in source.statements
+        if getattr(statement, "_limit_clause", None) is not None
+    )
+    assert claim._limit_clause.value == 500
