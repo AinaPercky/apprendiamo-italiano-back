@@ -5,7 +5,7 @@ import json
 import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table, delete, insert, update
 
-from app.database import Base, DualWriteSession, _apply_event, _retry_delay_seconds
+from app.database import (Base, DualWriteSession, _apply_event, _retry_delay_seconds, _is_supabase_transaction_pooler_url, _normalize_db_url)
 
 
 class FrozenFakeResult:
@@ -294,3 +294,30 @@ def test_retry_backoff_is_exponential_bounded_and_jittered():
 def test_retry_backoff_never_returns_zero_for_invalid_attempt_number():
     delay = _retry_delay_seconds(0, base_seconds=5, max_seconds=3600)
     assert 4 <= delay <= 6
+
+
+def test_supabase_transaction_pooler_disables_prepared_statement_caches():
+    url = (
+        "postgresql+asyncpg://postgres.project:secret@"
+        "aws-1-eu-west-1.pooler.supabase.com:6543/postgres"
+        "?sslmode=require&channel_binding=require"
+    )
+    normalized, connect_args = _normalize_db_url(url)
+
+    assert _is_supabase_transaction_pooler_url(url) is True
+    assert "prepared_statement_cache_size=0" in normalized
+    assert "sslmode" not in normalized
+    assert "channel_binding" not in normalized
+    assert connect_args == {"ssl": "require", "statement_cache_size": 0}
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql+asyncpg://user:secret@db.example.com:5432/postgres",
+        "postgresql+asyncpg://user:secret@aws-1-eu-west-1.pooler.supabase.com:5432/postgres",
+        "",
+    ],
+)
+def test_supabase_transaction_pooler_detection_does_not_match_other_endpoints(url):
+    assert _is_supabase_transaction_pooler_url(url) is False
