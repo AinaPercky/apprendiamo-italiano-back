@@ -4,7 +4,7 @@ import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -223,7 +223,10 @@ class DualWriteSession:
         # The outbox stores row-level facts, never executable SQL. RETURNING
         # supplies the exact affected rows, including composite primary keys.
         existing_returning = getattr(statement, "_returning", ())
-        returning_ids = {id(column) for column in existing_returning}
+        returning_ids = set()
+        for expression in existing_returning:
+            clause = expression.__clause_element__() if hasattr(expression, "__clause_element__") else expression
+            returning_ids.add(id(clause))
         missing_columns = [column for column in table.columns if id(column) not in returning_ids]
         tracked_statement = statement.returning(*missing_columns) if missing_columns else statement
         result = await self._active.execute(
@@ -296,6 +299,12 @@ class DualWriteSession:
             else:
                 events.append(_object_event(value, self.active_name, operation or "upsert"))
         if events:
+            # created_at is a stable ordering key for recovery after a process
+            # restart; keep the in-transaction mutation order even when ORM
+            # events are materialized later than Core DML events.
+            event_time = datetime.now().astimezone()
+            for index, event in enumerate(events):
+                event["created_at"] = event_time + timedelta(microseconds=index)
             # Outbox rows and business writes share the same primary transaction.
             await self._active.execute(insert(sync_outbox), events)
 
