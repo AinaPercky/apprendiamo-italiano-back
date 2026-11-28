@@ -12,13 +12,25 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table, Text, insert, select, text, update, inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.pool import NullPool
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 logger = logging.getLogger(__name__)
 
 
+def _is_supabase_transaction_pooler_url(url: str) -> bool:
+    """Détecte le pooler Supabase partagé en mode transaction (port 6543)."""
+    if not url:
+        return False
+    parsed = urlsplit(url)
+    try:
+        return bool(parsed.hostname and parsed.hostname.endswith(".pooler.supabase.com") and parsed.port == 6543)
+    except ValueError:
+        return False
+
+
 def _normalize_db_url(url: str) -> tuple[str, dict]:
-    """Normalise une URL PostgreSQL pour asyncpg."""
+    """Normalise une URL PostgreSQL pour asyncpg et le pooler transaction Supabase."""
     if not url:
         return url, {}
     if url.startswith("postgres://"):
@@ -33,6 +45,12 @@ def _normalize_db_url(url: str) -> tuple[str, dict]:
     # asyncpg attend ici le mode ``require`` : ``ssl=True`` active une
     # vérification de certificat qui échoue avec le certificat du pooler.
     connect_args = {"ssl": "require"} if ssl_mode.lower() in {"require", "verify-ca", "verify-full"} else {}
+    if _is_supabase_transaction_pooler_url(url):
+        # Supavisor transaction mode ne conserve pas l'état de session :
+        # asyncpg doit désactiver son cache de prepared statements et SQLAlchemy
+        # son propre cache pour éviter les erreurs "already exists"/"does not exist".
+        query["prepared_statement_cache_size"] = "0"
+        connect_args["statement_cache_size"] = 0
     normalized = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
     return normalized, connect_args
 
@@ -49,16 +67,17 @@ engine = create_async_engine(
     pool_pre_ping=True,
     connect_args=PRIMARY_CONNECT_ARGS,
 )
-secondary_engine = (
-    create_async_engine(
-        SECONDARY_URL,
-        echo=os.getenv("SQL_ECHO", "0") == "1",
-        pool_pre_ping=True,
-        connect_args=SECONDARY_CONNECT_ARGS,
-    )
-    if SECONDARY_URL
-    else None
-)
+SECONDARY_IS_TRANSACTION_POOLER = _is_supabase_transaction_pooler_url(SECONDARY_URL_RAW)
+_secondary_engine_options = {
+    "echo": os.getenv("SQL_ECHO", "0") == "1",
+    "pool_pre_ping": True,
+    "connect_args": SECONDARY_CONNECT_ARGS,
+}
+if SECONDARY_IS_TRANSACTION_POOLER:
+    # Recommended for serverless applications using Supabase transaction pooling.
+    _secondary_engine_options["poolclass"] = NullPool
+
+secondary_engine = create_async_engine(SECONDARY_URL, **_secondary_engine_options) if SECONDARY_URL else None
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession, expire_on_commit=False)
 SecondarySessionLocal = (
