@@ -50,6 +50,12 @@ async def _scalar(engine, statement):
         return (await session.execute(statement)).scalar_one()
 
 
+async def _insert_business_row(engine, row_id: int, value: str):
+    async with AsyncSession(engine) as session:
+        await session.execute(insert(probe).values(id=row_id, value=value))
+        await session.commit()
+
+
 @pytest.mark.asyncio
 async def test_real_postgres_replay_both_directions_and_quarantine_conflict():
     assert db.secondary_engine is not None, "SUPABASE_DATABASE_URL must point to second PostgreSQL service"
@@ -103,6 +109,9 @@ async def test_real_postgres_replay_both_directions_and_quarantine_conflict():
         # overwrite either business row; both events and conflict registers persist.
         neon_conflict_id = str(uuid.uuid4())
         supabase_conflict_id = str(uuid.uuid4())
+        # These rows model independently committed source-of-truth writes.
+        await _insert_business_row(db.engine, 303, "neon-version")
+        await _insert_business_row(db.secondary_engine, 303, "supabase-version")
         await _insert_event(db.engine, "neon", neon_conflict_id, 303, "neon-version")
         await _insert_event(db.secondary_engine, "supabase", supabase_conflict_id, 303, "supabase-version")
         await db.reconcile_once()
