@@ -5,7 +5,7 @@ import json
 import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table, delete, insert, update
 
-from app.database import Base, DualWriteSession, _apply_event
+from app.database import Base, DualWriteSession, _apply_event, _retry_delay_seconds
 
 
 class FrozenFakeResult:
@@ -279,3 +279,18 @@ async def test_replay_rejects_payload_primary_key_mismatch():
     finally:
         Base.metadata.remove(table)
 
+
+
+def test_retry_backoff_is_exponential_bounded_and_jittered():
+    first = _retry_delay_seconds(1, base_seconds=5, max_seconds=3600)
+    second = _retry_delay_seconds(2, base_seconds=5, max_seconds=3600)
+    capped = _retry_delay_seconds(20, base_seconds=5, max_seconds=3600)
+
+    assert 4 <= first <= 6
+    assert 8 <= second <= 12
+    assert 2880 <= capped <= 4320
+
+
+def test_retry_backoff_never_returns_zero_for_invalid_attempt_number():
+    delay = _retry_delay_seconds(0, base_seconds=5, max_seconds=3600)
+    assert 4 <= delay <= 6
