@@ -26,6 +26,7 @@ Les mutations suivies par une même session sont rejouées dans l'ordre où la f
 - Les DML sans table ou clé primaire sont refusés avant leur exécution : aucune écriture non traçable ne doit être validée silencieusement.
 - L'outbox contient les valeurs nécessaires à la réplication, potentiellement des champs sensibles comme les empreintes de mots de passe. Elle doit rester une table interne, inaccessible aux API publiques et aux applications clientes.
 - Ne jamais journaliser le contenu des payloads ou les secrets dans les logs.
+- Une table inconnue, une colonne absente des métadonnées, une clé primaire incomplète ou une opération inconnue provoque une erreur explicite ; aucun événement incompatible n'est ignoré silencieusement.
 - Les conflits entre écritures concurrentes des deux bases, le backoff, la quarantaine et l'exécution durable du worker restent dans P0-07.2 et P0-07.3.
 - Cette étape ne modifie pas le schéma de production et ne lance aucune migration.
 
